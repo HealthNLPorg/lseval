@@ -21,3 +21,14 @@ class Relation:
 
 
 Annotation = Entity | Relation
+
+
+@dataclass
+class AnnotatedFile:
+    entities: set[Entity]
+    relations: set[Relation]
+
+
+@dataclass
+class SingleAnnotatorCorpus:
+    annotated_files: set[AnnotatedFile]

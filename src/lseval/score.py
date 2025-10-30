@@ -1,0 +1,93 @@
+from .correctness_matrix import CorrectnessMatrix
+from .datatypes import Entity, Relation
+from bisect import bisect_left
+
+
+def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
+    return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
+
+
+# Assume that the entity subtype here is fixed
+# in Java would use <T extends Entity> ... set[T] ... set[T]
+def build_entity_correctness_matrix(
+    predicted_entities: set[Entity], reference_entities: set[Entity], overlap: bool
+) -> CorrectnessMatrix:
+    if overlap:
+        return overlap_entity_correctness_matrix(predicted_entities, reference_entities)
+    return exact_entity_correctness_matrix(predicted_entities, reference_entities)
+
+
+def overlap_entity_correctness_matrix(
+    predicted_entities: set[Entity], reference_entities: set[Entity]
+) -> CorrectnessMatrix:
+    reference_span_to_entity = {entity.span: entity for entity in reference_entities}
+    assert len(reference_span_to_entity) == len(reference_entities)
+    predicted_span_to_entity = {entity.span: entity for entity in predicted_entities}
+    assert len(predicted_span_to_entity) == len(predicted_entities)
+    sorted_reference_spans = sorted(reference_span_to_entity.keys())
+    sorted_predicted_spans = sorted(predicted_span_to_entity.keys())
+    true_positive_entities = set()
+    false_positive_entities = set()
+    false_negative_entities = set()
+    # This is still kind of brute force but at least this
+    # is a reasonably Pythonic draft
+    # designing a nicer aligorithm for this
+    # seems to have some weird time/memory
+    # tradeoffs and is probably only worth it for
+    # a ton of intervals with a lot of interval intersections
+    # The wrinkle being overlapping is not an equivalence
+    # relation.  I.e. is reflexive and symmetric but not transitive
+    for span, entity in predicted_span_to_entity.items():
+        if any(overlap_match(span, ref_span) for ref_span in sorted_reference_spans):
+            true_positive_entities.add(entity)
+        else:
+            false_positive_entities.add(entity)
+    for span, entity in reference_span_to_entity.items():
+        if any(overlap_match(span, pred_span) for pred_span in sorted_predicted_spans):
+            continue
+        false_negative_entities.add(entity)
+
+    return CorrectnessMatrix(
+        true_positives=true_positive_entities,
+        false_positives=false_positive_entities,
+        false_negatives=false_negative_entities,
+    )
+
+
+def exact_entity_correctness_matrix(
+    predicted_entities: set[Entity], reference_entities: set[Entity]
+) -> CorrectnessMatrix:
+    # want to keep this span level due to the extension logic, can re-work it later
+    reference_span_to_entity = {entity.span: entity for entity in reference_entities}
+    assert len(reference_span_to_entity) == len(reference_entities)
+    predicted_span_to_entity = {entity.span: entity for entity in predicted_entities}
+    assert len(predicted_span_to_entity) == len(predicted_entities)
+    true_positive_entities = {
+        predicted_span_to_entity[predicted_span]
+        for predicted_span in reference_span_to_entity.keys()
+        & predicted_span_to_entity.keys()
+    }
+
+    false_positive_entities = {
+        predicted_span_to_entity[predicted_span]
+        for predicted_span in predicted_span_to_entity.keys()
+        - reference_span_to_entity.keys()
+    }
+    false_negative_entities = {
+        reference_span_to_entity[predicted_span]
+        for predicted_span in reference_span_to_entity.keys()
+        - predicted_span_to_entity.keys()
+    }
+    return CorrectnessMatrix(
+        true_positives=true_positive_entities,
+        false_positives=false_positive_entities,
+        false_negatives=false_negative_entities,
+    )
+
+
+def build_relation_correctness_matrix(
+    predicted_relations: list[Relation],
+    reference_relations: list[Relation],
+    overlap: bool,
+) -> CorrectnessMatrix:
+    return CorrectnessMatrix()
