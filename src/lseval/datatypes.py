@@ -1,6 +1,42 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from itertools import combinations, product
+from operator import itemgetter
 from typing import Any
+
+
+def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
+    return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
+
+
+def admits_bijection(preimage: Iterable[Any], image: Iterable[Any]) -> bool:
+    return len(set(preimage)) == len(set(image))
+
+
+def get_nth(mapping: Iterable[tuple[Any, ...]], n: int) -> Iterable[Any]:
+    return map(itemgetter(n), mapping)
+
+
+def get_preimage(mapping: Iterable[tuple[Any, Any]]) -> Iterable[Any]:
+    return get_nth(mapping, n=0)
+
+
+def get_image(mapping: Iterable[tuple[Any, Any]]) -> Iterable[Any]:
+    return get_nth(mapping, n=1)
+
+
+def overlap_exists(
+    first_spans: set[tuple[int, int]], second_spans: set[tuple[int, int]]
+) -> bool:
+    for mapping in combinations(product(first_spans, second_spans), r=2):
+        preimage = get_preimage(mapping)
+        image = get_image(mapping)
+        if admits_bijection(preimage, image) and all(
+            overlap_match(*pair) for pair in mapping
+        ):
+            return True
+    return False
 
 
 @dataclass
@@ -41,14 +77,27 @@ class Relation:
                 self.label,
             )
         if not self.directed and not other.directed:
-            spans = {self.arg1.span, self.arg2.span}
-            order_ignored_match = other.arg1.span in spans and other.arg2.span in spans
+            order_ignored_match = {self.arg1.span, self.arg2.span} == {
+                other.arg1.span,
+                other.arg2.span,
+            }
             return other.label == self.label and order_ignored_match
         return False
 
     def overlap_match(self, other: Any) -> bool:
         if not isinstance(other, Relation):
             return False
+        if self.directed and other.directed:
+            order_sensitive_match = self.arg1.overlap_match(
+                other.arg1
+            ) and self.arg2.overlap_match(other.arg2)
+
+            return other.label == self.label and order_sensitive_match
+        if not self.directed and not other.directed:
+            this_spans = {self.arg1.span, self.arg2.span}
+            other_spans = {other.arg1.span, other.arg2.span}
+            order_ignored_match = overlap_exists(this_spans, other_spans)
+            return other.label == self.label and order_ignored_match
         return False
 
 

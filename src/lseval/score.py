@@ -1,9 +1,5 @@
 from .correctness_matrix import CorrectnessMatrix
-from .datatypes import Entity, Relation
-
-
-def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
-    return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
+from .datatypes import Entity, Relation, overlap_match
 
 
 # Assume that the entity subtype here is fixed
