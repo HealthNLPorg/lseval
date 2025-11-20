@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -11,17 +11,17 @@ class CorrectnessMatrix(Generic[T]):
     false_positives: set[T] = set()
     false_negatives: set[T] = set()
 
-    def is_true_positive(self, annotation: T) -> bool:
-        return annotation in self.true_positives
+    def is_true_positive(self, datum: Any) -> bool:
+        return datum in self.true_positives
 
-    def is_true_negative(self, annotation: T) -> bool:
-        return annotation in self.true_negatives
+    def is_true_negative(self, datum: Any) -> bool:
+        return datum in self.true_negatives
 
-    def is_false_positive(self, annotation: T) -> bool:
-        return annotation in self.false_positives
+    def is_false_positive(self, datum: Any) -> bool:
+        return datum in self.false_positives
 
-    def is_false_negative(self, annotation: T) -> bool:
-        return annotation in self.false_negatives
+    def is_false_negative(self, datum: Any) -> bool:
+        return datum in self.false_negatives
 
     def get_precision(self) -> float:
         return len(self.true_positives) / (

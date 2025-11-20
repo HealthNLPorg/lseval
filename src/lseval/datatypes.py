@@ -1,3 +1,4 @@
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
@@ -11,7 +12,8 @@ def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> boo
 
 
 def admits_bijection(preimage: Iterable[Any], image: Iterable[Any]) -> bool:
-    return len(set(preimage)) == len(set(image))
+    # reduced function is a permutation but allows for repeats
+    return sorted(Counter(preimage).values()) == sorted(Counter(image).values())
 
 
 def get_nth(mapping: Iterable[tuple[Any, ...]], n: int) -> Iterable[Any]:
@@ -30,6 +32,8 @@ def overlap_exists(
     first_spans: set[tuple[int, int]], second_spans: set[tuple[int, int]]
 ) -> bool:
     for mapping in combinations(product(first_spans, second_spans), r=2):
+        # Don't need to worry about iterator exhaustion
+        # since itertools.combinations returns tuples
         preimage = get_preimage(mapping)
         image = get_image(mapping)
         if admits_bijection(preimage, image) and all(
@@ -99,9 +103,6 @@ class Relation:
             order_ignored_match = overlap_exists(this_spans, other_spans)
             return other.label == self.label and order_ignored_match
         return False
-
-
-Annotation = Entity | Relation
 
 
 @dataclass
