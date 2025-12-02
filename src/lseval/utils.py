@@ -1,7 +1,8 @@
-from collections.abc import Mapping, Iterable
-from collections import deque
+from collections.abc import Iterable, Mapping
+
 from more_itertools import partition
-from .datatypes import SingleAnnotatorCorpus, AnnotatedFile, Entity, Relation
+
+from .datatypes import AnnotatedFile, Entity, Relation, SingleAnnotatorCorpus
 
 
 def organize_corpus_annotations_by_annotator[T](
@@ -27,9 +28,9 @@ def organize_file_by_annotator_id(
 
 
 def id_annotations_to_file(id_annotations: list[dict]) -> AnnotatedFile:
-
     def is_relation(annotation: dict) -> bool:
         return annotation["type"] == "relation"
+
     entity_iter, relation_iter = partition(is_relation, id_annotations)
     ann_id_to_entity = organize_entities_by_ann_id(entity_iter)
     linked_relations = parse_and_coordinate_relations(relation_iter, ann_id_to_entity)
@@ -41,8 +42,11 @@ def id_annotations_to_file(id_annotations: list[dict]) -> AnnotatedFile:
     )
 
 
-def organize_entities_by_ann_id(entity_annotations: Iterable[dict]) -> Mapping[str, Entity]:
+def organize_entities_by_ann_id(
+    entity_annotations: Iterable[dict],
+) -> Mapping[str, Entity]:
     return dict()
+
 
 def parse_and_coordinate_relations(
     relation_annotations: Iterable[dict], ann_id_to_entity: Mapping[str, Entity]

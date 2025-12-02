@@ -1,11 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 
 @dataclass
-class CorrectnessMatrix(Generic[T]):
+class CorrectnessMatrix[T]:
     true_positives: set[T] = set()
     true_negatives: set[T] = set()
     false_positives: set[T] = set()
