@@ -3,6 +3,7 @@ from itertools import groupby
 from typing import cast
 
 from more_itertools import partition
+from collections import deque, defaultdict
 
 from .datatypes import AnnotatedFile, Entity, Relation, SingleAnnotatorCorpus
 
@@ -40,15 +41,27 @@ def organize_corpus_annotations_by_annotator[T](
 def organize_file_annotations_by_annotator[T](
     raw_file_dictionary: dict, id_to_unique_annotator: Mapping[int, T]
 ) -> dict[T, AnnotatedFile]:
+    annotator_to_annotated_files = defaultdict(lambda: deque)
+    for annotator_id, annotated_file in raw_file_dictionary.items():
+        annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
+            annotated_file
+        )
     return {}
 
 
 def organize_file_by_annotator_id(
     raw_file_dictionary: dict,
 ) -> dict[int, AnnotatedFile]:
+    file_id = int(raw_file_dictionary["id"])
     id_annotations_ls = raw_file_dictionary["annotations"]
+
+    def build_annotated_file(annotations: list[dict]) -> AnnotatedFile:
+        annotated_file = id_annotations_to_file(annotations)
+        annotated_file.file_id = file_id
+        return annotated_file
+
     return {
-        annotations["completed_by"]: id_annotations_to_file(annotations)
+        annotations["completed_by"]: build_annotated_file(annotations)
         for annotations in id_annotations_ls
     }
 

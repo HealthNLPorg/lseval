@@ -108,6 +108,7 @@ class Relation:
 
 @dataclass
 class AnnotatedFile:
+    file_id: int | None
     entities: set[Entity]
     relations: set[Relation]
 
