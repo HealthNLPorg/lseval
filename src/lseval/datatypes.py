@@ -47,6 +47,7 @@ def overlap_exists(
 class Entity:
     span: tuple[int, int]
     text: str | None = None
+    dtr: str | None = None
     cuis: set[str] = set()
 
     def __post_init__(self):
