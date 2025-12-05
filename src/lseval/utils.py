@@ -1,9 +1,9 @@
+from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping
 from itertools import groupby
 from typing import cast
 
 from more_itertools import partition
-from collections import deque, defaultdict
 
 from .datatypes import AnnotatedFile, Entity, Relation, SingleAnnotatorCorpus
 
@@ -35,7 +35,18 @@ def attribute_select(attribute: str, instances: list[str]) -> list[str] | str | 
 def organize_corpus_annotations_by_annotator[T](
     raw_json_corpus: Iterable[dict], id_to_unique_annotator: Mapping[int, T]
 ) -> dict[T, SingleAnnotatorCorpus]:
-    return {}
+    annotator_to_files = defaultdict(lambda: set)
+    for raw_json_file in raw_json_corpus:
+        raw_file_dictionary = organize_file_by_annotator_id(raw_json_file)
+        annotator_merged_file_dictionary = organize_file_annotations_by_annotator(
+            raw_file_dictionary, id_to_unique_annotator
+        )
+        for annotator, annotated_file in annotator_merged_file_dictionary.items():
+            annotator_to_files[annotator].add(annotated_file)
+    return {
+        annotator: SingleAnnotatorCorpus(annotated_files=annotated_files)
+        for annotator, annotated_files in annotator_to_files.items()
+    }
 
 
 def organize_file_annotations_by_annotator[T](
@@ -46,7 +57,14 @@ def organize_file_annotations_by_annotator[T](
         annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
             annotated_file
         )
-    return {}
+    merged = {}
+    for annotator, annotated_files in annotator_to_annotated_files.items():
+        if len(annotated_files) > 1:
+            ValueError(
+                f"Single annotator {annotator} has {len(annotated_files)} annotations done under multiple IDs - merge logic not presently supported - consult {annotator} for selection"
+            )
+        merged[annotator] = annotated_files.pop()
+    return merged
 
 
 def organize_file_by_annotator_id(
@@ -74,6 +92,7 @@ def id_annotations_to_file(id_annotations: list[dict]) -> AnnotatedFile:
     ann_id_to_entity = organize_entities_by_ann_id(entity_iter)
     linked_relations = parse_and_coordinate_relations(relation_iter, ann_id_to_entity)
     return AnnotatedFile(
+        file_id=None,
         entities=set(
             ann_id_to_entity.values()
         ),  # Mapping has the values method as a mixin https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping
