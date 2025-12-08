@@ -1,6 +1,6 @@
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from itertools import combinations, product
 from operator import itemgetter
@@ -46,9 +46,9 @@ def overlap_exists(
 @dataclass
 class Entity:
     span: tuple[int, int]
-    text: str | None = None
-    dtr: str | None = None
-    cuis: set[str] = set()
+    text: str | None
+    dtr: str | None
+    cuis: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         if self.span[1] <= self.span[0]:
@@ -109,10 +109,10 @@ class Relation:
 @dataclass
 class AnnotatedFile:
     file_id: int | None
-    entities: set[Entity]
-    relations: set[Relation]
+    entities: set[Entity] = field(default_factory=set)
+    relations: set[Relation] = field(default_factory=set)
 
 
 @dataclass
 class SingleAnnotatorCorpus:
-    annotated_files: set[AnnotatedFile]
+    annotated_files: set[AnnotatedFile] = field(default_factory=set)
