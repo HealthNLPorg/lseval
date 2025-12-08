@@ -48,7 +48,7 @@ class Entity:
     span: tuple[int, int]
     text: str | None
     dtr: str | None
-    cuis = field(default_factory=set)
+    cuis: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         if self.span[1] <= self.span[0]:
