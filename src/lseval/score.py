@@ -1,5 +1,12 @@
+from collections.abc import Mapping
+
 from .correctness_matrix import CorrectnessMatrix
-from .datatypes import Entity, Relation, overlap_match
+from .datatypes import (
+    Entity,
+    Relation,
+    SingleAnnotatorCorpus,
+    overlap_match,
+)
 
 
 # Assume that the entity subtype here is fixed
@@ -135,3 +142,9 @@ def overlap_relation_correctness_matrix(
         false_positives=false_positives,
         false_negatives=false_negatives,
     )
+
+
+def score_annotator_corpora(
+    predicted_corpus: SingleAnnotatorCorpus, reference_corpus: SingleAnnotatorCorpus
+) -> Mapping[int, tuple[CorrectnessMatrix[Entity], CorrectnessMatrix[Relation]]]:
+    return {}
