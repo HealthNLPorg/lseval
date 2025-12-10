@@ -9,6 +9,14 @@ class CorrectnessMatrix[T]:
     false_positives: set[T] = set()
     false_negatives: set[T] = set()
 
+    def __contains__(self, datum: Any) -> bool:
+        return (
+            datum in self.true_positives
+            or datum in self.true_negatives
+            or datum in self.false_positives
+            or datum in self.false_negatives
+        )
+
     def is_true_positive(self, datum: Any) -> bool:
         return datum in self.true_positives
 

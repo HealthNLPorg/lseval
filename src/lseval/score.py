@@ -1,10 +1,8 @@
-from collections.abc import Mapping
 
 from .correctness_matrix import CorrectnessMatrix
 from .datatypes import (
     Entity,
     Relation,
-    SingleAnnotatorCorpus,
     overlap_match,
 )
 
