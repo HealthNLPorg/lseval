@@ -142,9 +142,3 @@ def overlap_relation_correctness_matrix(
         false_positives=false_positives,
         false_negatives=false_negatives,
     )
-
-
-def score_annotator_corpora(
-    predicted_corpus: SingleAnnotatorCorpus, reference_corpus: SingleAnnotatorCorpus
-) -> Mapping[int, tuple[CorrectnessMatrix[Entity], CorrectnessMatrix[Relation]]]:
-    return {}
