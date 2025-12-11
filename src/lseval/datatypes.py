@@ -43,12 +43,13 @@ def overlap_exists(
     return False
 
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class Entity:
+    file_id: int
     span: tuple[int, int]
-    text: str | None
-    dtr: str | None
-    cuis: set[str] = field(default_factory=set)
+    text: str | None = field(compare=False)
+    dtr: str | None = field(compare=False)
+    cuis: tuple[str, ...]
 
     def __post_init__(self):
         if self.span[1] <= self.span[0]:
@@ -65,8 +66,9 @@ class Entity:
         return self.span[0] < other.span[1] and self.span[1] > other.span[0]
 
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class Relation:
+    file_id: int
     arg1: Entity
     arg2: Entity
     label: Enum
@@ -76,7 +78,8 @@ class Relation:
         if not isinstance(other, Relation):
             return False
         if self.directed and other.directed:
-            return (other.arg1.span, other.arg2.span, other.label) == (
+            return (other.file_id, other.arg1.span, other.arg2.span, other.label) == (
+                self.file_id,
                 self.arg1.span,
                 self.arg2.span,
                 self.label,
@@ -86,7 +89,10 @@ class Relation:
                 other.arg1.span,
                 other.arg2.span,
             }
-            return other.label == self.label and order_ignored_match
+            return (other.file_id, other.label) == (
+                self.file_id,
+                self.label,
+            ) and order_ignored_match
         return False
 
     def overlap_match(self, other: Any) -> bool:
@@ -106,13 +112,13 @@ class Relation:
         return False
 
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class AnnotatedFile:
-    file_id: int | None
-    entities: set[Entity] = field(default_factory=set)
-    relations: set[Relation] = field(default_factory=set)
+    file_id: int
+    entities: frozenset[Entity] = field(default_factory=frozenset)
+    relations: frozenset[Relation] = field(default_factory=frozenset)
 
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class SingleAnnotatorCorpus:
-    annotated_files: set[AnnotatedFile] = field(default_factory=set)
+    annotated_files: frozenset[AnnotatedFile] = field(default_factory=frozenset)

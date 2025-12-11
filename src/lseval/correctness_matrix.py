@@ -11,10 +11,10 @@ class CorrectnessMatrix[T]:
 
     def __contains__(self, datum: Any) -> bool:
         return (
-            datum in self.true_positives
-            or datum in self.true_negatives
-            or datum in self.false_positives
-            or datum in self.false_negatives
+            self.is_true_positive(datum)
+            or self.is_true_negative(datum)
+            or self.is_false_positive(datum)
+            or self.is_false_negative(datum)
         )
 
     def is_true_positive(self, datum: Any) -> bool:
@@ -30,22 +30,25 @@ class CorrectnessMatrix[T]:
         return datum in self.false_negatives
 
     def get_precision(self) -> float:
-        return len(self.true_positives) / (
-            len(self.true_positives) + len(self.false_positives)
-        )
+        denominator = len(self.true_positives) + len(self.false_positives)
+        if denominator == 0:
+            return -1
+        return len(self.true_positives) / denominator
 
     def get_recall(self) -> float:
-        return len(self.true_positives) / (
-            len(self.true_positives) + len(self.false_negatives)
-        )
+        denominator = len(self.true_positives) + len(self.false_negatives)
+        if denominator == 0:
+            return -1
+        return len(self.true_positives) / denominator
 
     def get_f_beta(self, beta: float) -> float:
         precision = self.get_precision()
         recall = self.get_recall()
         beta_squared = pow(beta, 2.0)
-        return ((1 + beta_squared) * precision * recall) / (
-            (beta_squared * precision) + recall
-        )
+        denominator = (beta_squared * precision) + recall
+        if denominator == 0:
+            return -1
+        return ((1 + beta_squared) * precision * recall) / denominator
 
     def get_f1(self) -> float:
         return self.get_f_beta(beta=1.0)

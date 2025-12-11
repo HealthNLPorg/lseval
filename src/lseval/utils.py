@@ -35,16 +35,16 @@ def attribute_select(attribute: str, instances: list[str]) -> list[str] | str | 
 def organize_corpus_annotations_by_annotator[T](
     raw_json_corpus: Iterable[dict], id_to_unique_annotator: Mapping[int, T]
 ) -> dict[T, SingleAnnotatorCorpus]:
-    annotator_to_files = defaultdict(lambda: set)
+    annotator_to_files = defaultdict(lambda: deque())
     for raw_json_file in raw_json_corpus:
         raw_file_dictionary = organize_file_by_annotator_id(raw_json_file)
         annotator_merged_file_dictionary = organize_file_annotations_by_annotator(
             raw_file_dictionary, id_to_unique_annotator
         )
         for annotator, annotated_file in annotator_merged_file_dictionary.items():
-            annotator_to_files[annotator].add(annotated_file)
+            annotator_to_files[annotator].append(annotated_file)
     return {
-        annotator: SingleAnnotatorCorpus(annotated_files=annotated_files)
+        annotator: SingleAnnotatorCorpus(annotated_files=frozenset(annotated_files))
         for annotator, annotated_files in annotator_to_files.items()
     }
 
@@ -52,7 +52,7 @@ def organize_corpus_annotations_by_annotator[T](
 def organize_file_annotations_by_annotator[T](
     raw_file_dictionary: dict, id_to_unique_annotator: Mapping[int, T]
 ) -> dict[T, AnnotatedFile]:
-    annotator_to_annotated_files = defaultdict(lambda: deque)
+    annotator_to_annotated_files = defaultdict(lambda: deque())
     for annotator_id, annotated_file in raw_file_dictionary.items():
         annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
             annotated_file
@@ -73,34 +73,34 @@ def organize_file_by_annotator_id(
     file_id = int(raw_file_dictionary["id"])
     id_annotations_ls = raw_file_dictionary["annotations"]
 
-    def build_annotated_file(annotations: list[dict]) -> AnnotatedFile:
-        annotated_file = id_annotations_to_file(annotations)
-        annotated_file.file_id = file_id
-        return annotated_file
-
     return {
-        annotations["completed_by"]: build_annotated_file(annotations)
+        annotations["completed_by"]: id_annotations_to_file(
+            file_id, annotations["result"]
+        )
         for annotations in id_annotations_ls
     }
 
 
-def id_annotations_to_file(id_annotations: list[dict]) -> AnnotatedFile:
+def id_annotations_to_file(file_id: int, id_annotations: list[dict]) -> AnnotatedFile:
     def is_relation(annotation: dict) -> bool:
         return annotation["type"] == "relation"
 
     entity_iter, relation_iter = partition(is_relation, id_annotations)
-    ann_id_to_entity = organize_entities_by_ann_id(entity_iter)
-    linked_relations = parse_and_coordinate_relations(relation_iter, ann_id_to_entity)
+    ann_id_to_entity = organize_entities_by_ann_id(file_id, entity_iter)
+    linked_relations = frozenset(
+        parse_and_coordinate_relations(file_id, relation_iter, ann_id_to_entity)
+    )
     return AnnotatedFile(
-        file_id=None,
-        entities=set(
-            ann_id_to_entity.values()
+        file_id=file_id,
+        entities=frozenset(
+            entity for entity in ann_id_to_entity.values()
         ),  # Mapping has the values method as a mixin https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping
         relations=linked_relations,
     )
 
 
 def organize_entities_by_ann_id(
+    file_id: int,
     entity_annotations: Iterable[dict],
 ) -> Mapping[str, Entity]:
     def get_annotation_id(entity_annotation: dict) -> str:
@@ -114,14 +114,15 @@ def organize_entities_by_ann_id(
         entity_annotations, key=get_annotation_id
     ):
         entities = list(entity_iter)
-        annotation_id_to_entity[annotation_id] = (
-            coordinate_attribute_entities_to_single(entities)
-        )
+
+        single_entity = coordinate_attribute_entities_to_single(file_id, entities)
+        if single_entity is not None:
+            annotation_id_to_entity[annotation_id] = single_entity
     return annotation_id_to_entity
 
 
 def coordinate_attribute_entities_to_single(
-    entities: list[dict], attributes: set[str] = CORE_ATTRIBUTES
+    file_id: int, entities: list[dict], attributes: set[str] = CORE_ATTRIBUTES
 ) -> Entity | None:
     def get_indices(entity: dict) -> tuple[int, int]:
         e_value = entity.get("value")
@@ -151,7 +152,7 @@ def coordinate_attribute_entities_to_single(
         ValueError(f"DTR should be str or None instead is {dtr}")
         dtr = None
 
-    cuis = attribute_select("CUIs", attribute_name_to_ls["CUIs"])
+    cuis = attribute_select("CUI", attribute_name_to_ls["CUI"])
 
     if isinstance(cuis, list):
         cuis = set(cuis)
@@ -160,23 +161,29 @@ def coordinate_attribute_entities_to_single(
         cuis = set()
 
     return Entity(
-        span=first_inds, text=entities[0]["value"]["text"], dtr=dtr, cuis=cuis
+        file_id=file_id,
+        span=first_inds,
+        text=entities[0]["value"]["text"],
+        dtr=dtr,
+        cuis=tuple(sorted(cuis)),
     )
 
 
 def parse_and_coordinate_relations(
-    relation_annotations: Iterable[dict], ann_id_to_entity: Mapping[str, Entity]
-) -> set[Relation]:
+    file_id: int,
+    relation_annotations: Iterable[dict],
+    ann_id_to_entity: Mapping[str, Entity],
+) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
         if len(annotation["labels"]) > 1:
             ValueError(f"More than one label for relation annotation {annotation}")
         label = annotation["labels"][0]
         return Relation(
+            file_id=file_id,
             arg1=ann_id_to_entity[annotation["from_id"]],
             arg2=ann_id_to_entity[annotation["to_id"]],
             label=label,
         )
 
-    return {
-        json_annotation_to_relation(annotation) for annotation in relation_annotations
-    }
+    for annotation in relation_annotations:
+        yield json_annotation_to_relation(annotation)
