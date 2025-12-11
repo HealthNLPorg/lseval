@@ -1,13 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass
 class CorrectnessMatrix[T]:
-    true_positives: set[T] = set()
-    true_negatives: set[T] = set()
-    false_positives: set[T] = set()
-    false_negatives: set[T] = set()
+    true_positives: set[T] = field(default_factory=set)
+    true_negatives: set[T] = field(default_factory=set)
+    false_positives: set[T] = field(default_factory=set)
+    false_negatives: set[T] = field(default_factory=set)
 
     def __contains__(self, datum: Any) -> bool:
         return (

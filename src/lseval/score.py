@@ -1,4 +1,3 @@
-
 from .correctness_matrix import CorrectnessMatrix
 from .datatypes import (
     Entity,
