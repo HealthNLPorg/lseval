@@ -1,45 +1,107 @@
+import logging
 from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping
+from enum import Enum
 from itertools import groupby
+from operator import itemgetter
 from typing import cast
 
 from more_itertools import partition
 
-from .datatypes import AnnotatedFile, Entity, Relation, SingleAnnotatorCorpus
+from .datatypes import (
+    AnnotatedFile,
+    DocTimeRel,
+    Entity,
+    Relation,
+    SingleAnnotatorCorpus,
+)
 
-CORE_ATTRIBUTES = {"DocTimeRel", "CUI"}
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
+    level=logging.INFO,
+)
 
 
-def attribute_select(attribute: str, instances: list[str]) -> list[str] | str | None:
-    match attribute:
-        case "DocTimeRel":
-            if len(instances) == 0:
-                return None
-            elif len(instances) == 1:
-                return instances[0]
-            else:
-                first = instances[0]
-                if not all(instance == first for instance in instances):
-                    ValueError(f"Not all DTRs match for the same entity: {instances}")
-                    return None
-                return first
-        case "CUI":
-            if len(instances) == 0:
-                return None
-            return instances
-        case _:
-            ValueError(f"Attribute: {attribute} not presently supported")
-            return None
+class EventType(Enum):
+    RTEntity = "RTEntity"
+    AdverseEventEntity = "AdverseEventEntity"
+    NA = "N/A"
+
+    @classmethod
+    def _missing_(cls, value):
+        return DocTimeRel.NA
+
+
+CORE_ATTRIBUTES = {"DocTimeRel", "CUI", "Event"}
+
+
+def parse_dtr(entity: dict) -> DocTimeRel:
+    if entity.get("from_name") != "DocTimeRel":
+        ValueError(f"Wrong entity type for parse_dtr: {entity['from_name']}")
+        return DocTimeRel.NA
+    entity_value = entity.get("value")
+    if entity_value is None:
+        ValueError(f"Missing value field for DTR entity: {entity}")
+        return DocTimeRel.NA
+    dtr_choices = entity_value.get("choices", [])
+    if len(dtr_choices) != 1:
+        ValueError(f"Invalid values for DTR choices: {dtr_choices}")
+        return DocTimeRel.NA
+    # Don't worry there's a _missing_ method
+    return DocTimeRel(dtr_choices[0])
+
+
+def parse_cuis(entity: dict) -> tuple[str, ...]:
+    if entity.get("from_name") != "CUI":
+        ValueError(f"Wrong entity type for parse_cuis: {entity['from_name']}")
+        return ()
+    entity_value = entity.get("value")
+    if entity_value is None:
+        ValueError(f"Missing value field for CUIS entity: {entity}")
+        return ()
+    return tuple(sorted(entity_value.get("text", [])))
+
+
+def parse_event_type(entity: dict) -> EventType:
+    if entity.get("from_name") != "Event":
+        ValueError(f"Wrong entity type for parse_event_type: {entity['from_name']}")
+        return EventType.NA
+    entity_value = entity.get("value")
+    if entity_value is None:
+        ValueError(f"Missing value field for event type entity: {entity}")
+        return EventType.NA
+    event_type_labels = entity_value.get("labels", [])
+    if len(event_type_labels) != 1:
+        ValueError(f"Invalid values for event type labels: {event_type_labels}")
+        return EventType.NA
+    # Don't worry there's a _missing_ method
+    return EventType(event_type_labels[0])
+
+
+def parse_text(entity: dict) -> str | None:
+    if entity.get("from_name") != "DocTimeRel" and entity.get("from_name") != "Event":
+        ValueError(f"Wrong entity type for parse_text: {entity['from_name']}")
+        return None
+    entity_value = entity.get("value")
+    if entity_value is None:
+        ValueError(f"Missing value field for DTR/Event entity: {entity}")
+        return None
+    return entity_value.get("text", [])
 
 
 def organize_corpus_annotations_by_annotator[T](
-    raw_json_corpus: Iterable[dict], id_to_unique_annotator: Mapping[int, T]
+    raw_json_corpus: Iterable[dict],
+    id_to_unique_annotator: Mapping[int, T],
+    annotator_ids_to_ignore: list[int],
 ) -> dict[T, SingleAnnotatorCorpus]:
     annotator_to_files = defaultdict(lambda: deque())
     for raw_json_file in raw_json_corpus:
         raw_file_dictionary = organize_file_by_annotator_id(raw_json_file)
         annotator_merged_file_dictionary = organize_file_annotations_by_annotator(
-            raw_file_dictionary, id_to_unique_annotator
+            raw_file_dictionary, id_to_unique_annotator, annotator_ids_to_ignore
         )
         for annotator, annotated_file in annotator_merged_file_dictionary.items():
             annotator_to_files[annotator].append(annotated_file)
@@ -50,13 +112,16 @@ def organize_corpus_annotations_by_annotator[T](
 
 
 def organize_file_annotations_by_annotator[T](
-    raw_file_dictionary: dict, id_to_unique_annotator: Mapping[int, T]
+    raw_file_dictionary: dict,
+    id_to_unique_annotator: Mapping[int, T],
+    annotator_ids_to_ignore: list[int],
 ) -> dict[T, AnnotatedFile]:
     annotator_to_annotated_files = defaultdict(lambda: deque())
     for annotator_id, annotated_file in raw_file_dictionary.items():
-        annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
-            annotated_file
-        )
+        if annotator_id not in annotator_ids_to_ignore:
+            annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
+                annotated_file
+            )
     merged = {}
     for annotator, annotated_files in annotator_to_annotated_files.items():
         if len(annotated_files) > 1:
@@ -121,51 +186,45 @@ def organize_entities_by_ann_id(
     return annotation_id_to_entity
 
 
+def get_indices(entity: dict) -> tuple[int, int]:
+    e_value = entity.get("value")
+    if e_value is None:
+        ValueError(f"Entity missing value field {entity}")
+        return -1, -1
+    else:
+        return e_value["start"], e_value["end"]
+
+
 def coordinate_attribute_entities_to_single(
     file_id: int, entities: list[dict], attributes: set[str] = CORE_ATTRIBUTES
 ) -> Entity | None:
-    def get_indices(entity: dict) -> tuple[int, int]:
-        e_value = entity.get("value")
-        if e_value is None:
-            ValueError(f"Entity missing value field {entity}")
-            return -1, -1
-        else:
-            return e_value["start"], e_value["end"]
+    entity_attribute_to_instances = {}
+    for attribute_type, entity_iter in groupby(
+        sorted(entities, key=itemgetter("from_name")), key=itemgetter("from_name")
+    ):
+        if attribute_type in attributes:
+            attribute_entities = list(entity_iter)
+            if len(attribute_entities) > 1:
+                logger.error(
+                    "%s has more than one entry for a particular entity %s",
+                    attribute_type,
+                    attribute_entities,
+                )
+            entity_attribute_to_instances[attribute_type] = attribute_entities[0]
 
     first_inds = get_indices(entities[0])
 
-    def ind_agree(entity: dict) -> bool:
-        return get_indices(entity) == first_inds
-
-    if not all(ind_agree(entity) for entity in entities[1:]):
+    if not all(get_indices(entity) == first_inds for entity in entities[1:]):
         ValueError(f"Entities not matching on indices {entities}")
         return None
-    attribute_name_to_ls = {}
-    for attribute in attributes:
-        attribute_name_to_ls[attribute] = [
-            entity.get(attribute)
-            for entity in entities
-            if entity.get(attribute) is not None
-        ]
-    dtr = attribute_select("DocTimeRel", attribute_name_to_ls["DocTimeRel"])
-    if dtr is not None and isinstance(dtr, list):
-        ValueError(f"DTR should be str or None instead is {dtr}")
-        dtr = None
-
-    cuis = attribute_select("CUI", attribute_name_to_ls["CUI"])
-
-    if isinstance(cuis, list):
-        cuis = set(cuis)
-    else:
-        ValueError(f"CUIs should be None or list[str] instead is {cuis}")
-        cuis = set()
 
     return Entity(
         file_id=file_id,
         span=first_inds,
-        text=entities[0]["value"]["text"],
-        dtr=dtr,
-        cuis=tuple(sorted(cuis)),
+        text=parse_text(entity_attribute_to_instances["Event"]),
+        dtr=parse_dtr(entity_attribute_to_instances["DocTimeRel"]),
+        label=parse_event_type(entity_attribute_to_instances["Event"]),
+        cuis=parse_cuis(entity_attribute_to_instances["CUI"]),
     )
 
 

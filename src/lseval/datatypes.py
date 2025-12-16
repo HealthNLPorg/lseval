@@ -7,6 +7,18 @@ from operator import itemgetter
 from typing import Any
 
 
+class DocTimeRel(Enum):
+    BEFORE = "BEFORE"
+    OVERLAP = "OVERLAP"
+    AFTER = "AFTER"
+    BEFORE_OVERLAP = "BEFORE-OVERLAP"
+    NA = "N/A"
+
+    @classmethod
+    def _missing_(cls, value):
+        return DocTimeRel.NA
+
+
 def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
     return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
 
@@ -48,7 +60,8 @@ class Entity:
     file_id: int
     span: tuple[int, int]
     text: str | None = field(compare=False)
-    dtr: str | None = field(compare=False)
+    dtr: DocTimeRel | None = field(compare=False)
+    label: Enum | None = field(compare=False)
     cuis: tuple[str, ...]
 
     def __post_init__(self):
