@@ -1,7 +1,7 @@
+import json
 import logging
 from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping
-from enum import Enum
 from itertools import groupby
 from operator import itemgetter
 from typing import cast
@@ -23,16 +23,6 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %H:%M:%S",
     level=logging.INFO,
 )
-
-
-class EventType(Enum):
-    RTEntity = "RTEntity"
-    AdverseEventEntity = "AdverseEventEntity"
-    NA = "N/A"
-
-    @classmethod
-    def _missing_(cls, value):
-        return DocTimeRel.NA
 
 
 CORE_ATTRIBUTES = {"DocTimeRel", "CUI", "Event"}
@@ -63,22 +53,6 @@ def parse_cuis(entity: dict) -> tuple[str, ...]:
         ValueError(f"Missing value field for CUIS entity: {entity}")
         return ()
     return tuple(sorted(entity_value.get("text", [])))
-
-
-def parse_event_type(entity: dict) -> EventType:
-    if entity.get("from_name") != "Event":
-        ValueError(f"Wrong entity type for parse_event_type: {entity['from_name']}")
-        return EventType.NA
-    entity_value = entity.get("value")
-    if entity_value is None:
-        ValueError(f"Missing value field for event type entity: {entity}")
-        return EventType.NA
-    event_type_labels = entity_value.get("labels", [])
-    if len(event_type_labels) != 1:
-        ValueError(f"Invalid values for event type labels: {event_type_labels}")
-        return EventType.NA
-    # Don't worry there's a _missing_ method
-    return EventType(event_type_labels[0])
 
 
 def parse_text(entity: dict) -> str | None:
@@ -195,6 +169,22 @@ def get_indices(entity: dict) -> tuple[int, int]:
         return e_value["start"], e_value["end"]
 
 
+def parse_event_type(entity: dict) -> str | None:
+    if entity.get("from_name") != "Event":
+        ValueError(f"Wrong entity type for parse_event_type: {entity['from_name']}")
+        return None
+    entity_value = entity.get("value")
+    if entity_value is None:
+        ValueError(f"Missing value field for event type entity: {entity}")
+        return None
+    event_type_labels = entity_value.get("labels", [])
+    if len(event_type_labels) != 1:
+        ValueError(f"Invalid values for event type labels: {event_type_labels}")
+        return None
+    # Don't worry there's a _missing_ method
+    return str(event_type_labels[0])
+
+
 def coordinate_attribute_entities_to_single(
     file_id: int, entities: list[dict], attributes: set[str] = CORE_ATTRIBUTES
 ) -> Entity | None:
@@ -225,6 +215,7 @@ def coordinate_attribute_entities_to_single(
         dtr=parse_dtr(entity_attribute_to_instances["DocTimeRel"]),
         label=parse_event_type(entity_attribute_to_instances["Event"]),
         cuis=parse_cuis(entity_attribute_to_instances["CUI"]),
+        source_annotations=[json.dumps(entity) for entity in entities],
     )
 
 
@@ -234,14 +225,14 @@ def parse_and_coordinate_relations(
     ann_id_to_entity: Mapping[str, Entity],
 ) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
-        if len(annotation["labels"]) > 1:
-            ValueError(f"More than one label for relation annotation {annotation}")
-        label = annotation["labels"][0]
+        label = annotation["labels"]
+        assert isinstance(label, list)
         return Relation(
             file_id=file_id,
             arg1=ann_id_to_entity[annotation["from_id"]],
             arg2=ann_id_to_entity[annotation["to_id"]],
             label=label,
+            source_annotations=[json.dumps(annotation)],
         )
 
     for annotation in relation_annotations:
