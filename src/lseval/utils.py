@@ -208,14 +208,18 @@ def coordinate_attribute_entities_to_single(
         ValueError(f"Entities not matching on indices {entities}")
         return None
 
+    raw_event = entity_attribute_to_instances.get("Event")
+    raw_dtr = entity_attribute_to_instances.get("DocTimeRel")
+    raw_cuis = entity_attribute_to_instances.get("CUI")
     return Entity(
         file_id=file_id,
+        label_studio_id=entities[0]["id"],
         span=first_inds,
-        text=parse_text(entity_attribute_to_instances["Event"]),
-        dtr=parse_dtr(entity_attribute_to_instances["DocTimeRel"]),
-        label=parse_event_type(entity_attribute_to_instances["Event"]),
-        cuis=parse_cuis(entity_attribute_to_instances["CUI"]),
-        source_annotations=[json.dumps(entity) for entity in entities],
+        text=parse_text(raw_event) if raw_event is not None else None,
+        dtr=parse_dtr(raw_dtr) if raw_dtr is not None else None,
+        label=parse_event_type(raw_event) if raw_event is not None else None,
+        cuis=parse_cuis(raw_cuis) if raw_cuis is not None else (),
+        source_annotations=tuple(json.dumps(entity) for entity in entities),
     )
 
 
@@ -227,12 +231,13 @@ def parse_and_coordinate_relations(
     def json_annotation_to_relation(annotation: dict) -> Relation:
         label = annotation["labels"]
         assert isinstance(label, list)
+        label = tuple(label)
         return Relation(
             file_id=file_id,
             arg1=ann_id_to_entity[annotation["from_id"]],
             arg2=ann_id_to_entity[annotation["to_id"]],
             label=label,
-            source_annotations=[json.dumps(annotation)],
+            source_annotations=(json.dumps(annotation),),
         )
 
     for annotation in relation_annotations:

@@ -58,12 +58,13 @@ def overlap_exists(
 @dataclass(eq=True, frozen=True)
 class Entity:
     file_id: int
+    label_studio_id: str
     span: tuple[int, int]
     text: str | None = field(compare=False)
     dtr: DocTimeRel | None = field(compare=False)
     label: str | None = field(compare=False)
     cuis: tuple[str, ...]
-    source_annotations: list[str]
+    source_annotations: tuple[str, ...]
 
     def __post_init__(self):
         if self.span[1] <= self.span[0]:
@@ -85,8 +86,8 @@ class Relation:
     file_id: int
     arg1: Entity
     arg2: Entity
-    label: list[str]
-    source_annotations: list[str]
+    label: tuple[str, ...]
+    source_annotations: tuple[str]
     directed: bool = False
 
     def __eq__(self, other: Any):
