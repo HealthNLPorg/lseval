@@ -8,6 +8,7 @@ class CorrectnessMatrix[T]:
     true_negatives: set[T] = field(default_factory=set)
     false_positives: set[T] = field(default_factory=set)
     false_negatives: set[T] = field(default_factory=set)
+    support: int = 0
 
     def __contains__(self, datum: Any) -> bool:
         return (
@@ -54,7 +55,4 @@ class CorrectnessMatrix[T]:
         return self.get_f_beta(beta=1.0)
 
     def get_support(self) -> int:
-        return len(self.true_negatives)
-        +len(self.true_negatives)
-        +len(self.false_negatives)
-        +len(self.false_negatives)
+        return self.support

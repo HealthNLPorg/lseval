@@ -53,6 +53,7 @@ def overlap_entity_correctness_matrix(
         true_positives=true_positive_entities,
         false_positives=false_positive_entities,
         false_negatives=false_negative_entities,
+        support=len(reference_entities),
     )
 
 
@@ -84,6 +85,7 @@ def exact_entity_correctness_matrix(
         true_positives=true_positive_entities,
         false_positives=false_positive_entities,
         false_negatives=false_negative_entities,
+        support=len(reference_entities),
     )
 
 
@@ -112,6 +114,7 @@ def exact_relation_correctness_matrix(
         true_positives=predicted_set & reference_set,
         false_positives=predicted_set - reference_set,
         false_negatives=reference_set - predicted_set,
+        support=len(reference_relations),
     )
 
 
@@ -138,4 +141,5 @@ def overlap_relation_correctness_matrix(
         true_positives=true_positives,
         false_positives=false_positives,
         false_negatives=false_negatives,
+        support=len(reference_relations),
     )
