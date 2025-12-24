@@ -52,3 +52,9 @@ class CorrectnessMatrix[T]:
 
     def get_f1(self) -> float:
         return self.get_f_beta(beta=1.0)
+
+    def get_support(self) -> int:
+        return len(self.true_negatives)
+        +len(self.true_negatives)
+        +len(self.false_negatives)
+        +len(self.false_negatives)
