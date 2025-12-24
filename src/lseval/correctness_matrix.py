@@ -32,13 +32,13 @@ class CorrectnessMatrix[T]:
     def get_precision(self) -> float:
         denominator = len(self.true_positives) + len(self.false_positives)
         if denominator == 0:
-            return -1
+            return float("nan")
         return len(self.true_positives) / denominator
 
     def get_recall(self) -> float:
         denominator = len(self.true_positives) + len(self.false_negatives)
         if denominator == 0:
-            return -1
+            return float("nan")
         return len(self.true_positives) / denominator
 
     def get_f_beta(self, beta: float) -> float:
@@ -47,7 +47,7 @@ class CorrectnessMatrix[T]:
         beta_squared = pow(beta, 2.0)
         denominator = (beta_squared * precision) + recall
         if denominator == 0:
-            return -1
+            return float("nan")
         return ((1 + beta_squared) * precision * recall) / denominator
 
     def get_f1(self) -> float:
