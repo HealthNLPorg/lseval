@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from collections import defaultdict, deque
 from collections.abc import Iterable, Mapping
 from itertools import groupby
@@ -26,6 +27,35 @@ logging.basicConfig(
 
 
 CORE_ATTRIBUTES = {"DocTimeRel", "CUI", "Event"}
+
+LS_SALT_STRING_ALPHABET = (
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"
+)
+LS_SALT_STRING_LENGTH = 10
+
+
+def get_salt_string(alphabet: str, length: int) -> str:
+    return "".join(random.choices(population=alphabet, k=length))
+
+
+def get_label_studio_id() -> str:
+    return get_salt_string(
+        alphabet=LS_SALT_STRING_ALPHABET, length=LS_SALT_STRING_LENGTH
+    )
+
+
+def get_unique_label_studio_id(
+    used_ids: set[str], tries: int = 10
+) -> tuple[str, set[str]]:
+    for try_count in range(tries):
+        label_studio_id = get_label_studio_id()
+        if label_studio_id not in used_ids:
+            used_ids.add(label_studio_id)
+            return label_studio_id, used_ids
+    ValueError(
+        f"Could not create a unique label string against {len(used_ids)} with {tries} tries"
+    )
+    return "_INVALID_LABEL_STUDIO_ID_", used_ids
 
 
 def parse_dtr(entity: dict) -> DocTimeRel:

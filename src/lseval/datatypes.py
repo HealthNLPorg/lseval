@@ -90,6 +90,12 @@ class Relation:
     source_annotations: tuple[str]
     directed: bool = False
 
+    # FIXME - not sure how Anaforatools
+    # handles this but here currently the
+    # Relation equality is agnostic to the types
+    # of its arguments, part of the motiviation
+    # for this is conceptual difficulty of scoring
+    # if it's not type agnostic
     def __eq__(self, other: Any):
         if not isinstance(other, Relation):
             return False

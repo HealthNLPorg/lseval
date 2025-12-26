@@ -33,7 +33,7 @@ def overlap_entity_correctness_matrix(
     false_negative_entities = set()
     # This is still kind of brute force but at least this
     # is a reasonably Pythonic draft
-    # designing a nicer aligorithm for this
+    # designing a nicer algorithm for this
     # seems to have some weird time/memory
     # tradeoffs and is probably only worth it for
     # a ton of intervals with a lot of interval intersections
