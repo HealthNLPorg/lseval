@@ -1,10 +1,13 @@
+import json
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from enum import Enum, EnumType
 from functools import partial
 from itertools import chain, groupby
+from operator import attrgetter
+from typing import cast
 
-from lseval.correctness_matrix import CorrectnessMatrix, Correctness
+from lseval.correctness_matrix import Correctness, CorrectnessMatrix
 from lseval.datatypes import Entity, Relation
 
 
@@ -21,73 +24,6 @@ def relation_is_linked(entities: set[Entity], relation: Relation) -> bool:
     return relation.arg1 in entities and relation.arg2 in entities
 
 
-def confirm_linked_annotations(
-    relations: Iterable[Relation], entities: set[Entity]
-) -> bool:
-    local_is_linked = partial(relation_is_linked, entities)
-    return all(map(local_is_linked, relations))
-
-
-def valid_false_postive_relation_arguments(
-    entity_correctness_matrix: CorrectnessMatrix[Entity], relation: Relation
-) -> bool:
-    arg1_valid = entity_correctness_matrix.is_true_positive(
-        relation.arg1
-    ) or entity_correctness_matrix.is_true_positive(relation.arg1)
-    arg2_valid = entity_correctness_matrix.is_true_positive(
-        relation.arg2
-    ) or entity_correctness_matrix.is_true_positive(relation.arg2)
-    return arg1_valid and arg2_valid
-
-
-def recoordinate_annotation_ids(
-    entity_correctness_matrix: CorrectnessMatrix[Entity],
-    relation_correctness_matrix: CorrectnessMatrix[Relation],
-    overlap: bool,
-    used_annotation_ids: set[str],
-) -> tuple[CorrectnessMatrix[Entity], CorrectnessMatrix[Relation], set[str]]:
-    # Valid true positives
-    if not confirm_linked_annotations(
-        relation_correctness_matrix.true_positives,
-        entity_correctness_matrix.true_positives,
-    ):
-        ValueError("True positive relation not rooted in true positive entities")
-        return CorrectnessMatrix(), CorrectnessMatrix(), set()
-    # Valid false negatives
-    if not confirm_linked_annotations(
-        relation_correctness_matrix.false_negatives,
-        entity_correctness_matrix.true_positives
-        | entity_correctness_matrix.false_negatives,
-    ):
-        ValueError(
-            "False negative relation not rooted in true positive or false negative entities"
-        )
-        return CorrectnessMatrix(), CorrectnessMatrix(), set()
-    # Valid false positives
-    local_fp_valid = partial(
-        valid_false_postive_relation_arguments, entity_correctness_matrix
-    )
-    if not all(map(local_fp_valid, relation_correctness_matrix.false_positives)):
-        ValueError(
-            "False postive relation not rooted in true positive or false positive entities"
-        )
-        return CorrectnessMatrix(), CorrectnessMatrix(), set()
-    NotImplementedError("Figure this out")
-    return CorrectnessMatrix(), CorrectnessMatrix(), set()
-
-
-# TP, FP, are from the predicted annotations, FN from the reference,
-# as a result the TP and FP annotation IDs will be from predicted,
-# and FN will be from reference
-
-# If FN relation, could be because one or more
-# of the relevant entities were annotated but
-# a relation wasn't annotated, or there were no relevant annotations annotated
-
-# Dually with FP
-
-
-# Thus will need to recoordinate the IDs
 def build_adjudication_file(
     file_id: int,
     file_text: str,
@@ -173,15 +109,25 @@ def labels_entity_to_adjudication_entity(annotator: Enum, labels_entity: dict) -
 
 
 def labels_relation_to_adjudication_relation(
-    annotator: Enum, labels_entity: dict
+    annotator: Enum, labels_relation: dict
 ) -> dict:
     return {
-        "from_id": labels_entity["from_id"],
-        "to_id": labels_entity["to_id"],
+        "from_id": labels_relation["from_id"],
+        "to_id": labels_relation["to_id"],
         "type": "relation",
-        "direction": labels_entity["right"],
+        "direction": labels_relation["direction"],
         "labels": [annotator.value],
     }
+
+
+def get_correctness[T](
+    t_to_typed_correctness_matrix: Mapping[T, CorrectnessMatrix[T]],
+    t: T,
+) -> Correctness:
+    correctness_matrix = t_to_typed_correctness_matrix.get(t)
+    if correctness_matrix is None:
+        return Correctness.NA
+    return correctness_matrix.get_correctness(t)
 
 
 def insert_adjudication_data(
@@ -222,20 +168,31 @@ def insert_adjudication_data(
     )
 
 
-def get_correctness[T](
-    t_to_typed_correctness_matrix: Mapping[T, CorrectnessMatrix[T]],
-    t: T,
-) -> Correctness:
-    correctness_matrix = t_to_typed_correctness_matrix.get(t)
-    if correctness_matrix is None:
-        return Correctness.NA
-    return correctness_matrix.get_correctness(t)
-
-
-def adjudicate_grouped_entities(
-    correctness: Correctness, entity_group: Iterable[Entity]
+def adjudicate_correctness_grouped_entities(
+    annotator: Enum, entity_group: Iterable[Entity]
 ) -> Iterable[dict]:
-    return []
+    for _, annotation_id_group in groupby(
+        sorted(entity_group, key=attrgetter("label_studio_id")),
+        key=attrgetter("label_studio_id"),
+    ):
+        entities = list(annotation_id_group)
+        if len(entities) != 1:
+            ValueError(f"Wrong number of entities {len(entities)}")
+            return []
+        entity = cast(Entity, entities[0])
+        source_entities = [
+            json.loads(entity_source) for entity_source in entity.source_annotations
+        ]
+        label_entities = [
+            entity for entity in source_entities if entity["type"] == "labels"
+        ]
+        if len(label_entities) != 1:
+            ValueError(
+                f"Wrong number of label entities in source annotations {len(label_entities)}"
+            )
+            return []
+        yield labels_entity_to_adjudication_entity(annotator, label_entities[0])
+        yield from source_entities
 
 
 def adjudicate_entities(
@@ -246,22 +203,62 @@ def adjudicate_entities(
 ) -> Iterable[dict]:
     local_get_correctness = partial(get_correctness, entity_to_typed_correctness_matrix)
     for correctness, entity_group in groupby(
-        sorted(prediction_entities, key=local_get_correctness),
+        sorted(
+            chain(prediction_entities, reference_entities), key=local_get_correctness
+        ),
         key=local_get_correctness,
     ):
-        yield from adjudicate_grouped_entities(correctness, entity_group)
+        match correctness:
+            case Correctness.TRUE_POSITIVE:
+                yield from adjudicate_correctness_grouped_entities(
+                    cast(Enum, annotators("Agreement")), entity_group
+                )
 
-    for correctness, entity_group in groupby(
-        sorted(reference_entities, key=local_get_correctness),
-        key=local_get_correctness,
-    ):
-        yield from adjudicate_grouped_entities(correctness, entity_group)
+            case Correctness.FALSE_POSITIVE:
+                yield from adjudicate_correctness_grouped_entities(
+                    cast(Enum, annotators("Prediction")), entity_group
+                )
+            case Correctness.FALSE_NEGATIVE:
+                yield from adjudicate_correctness_grouped_entities(
+                    cast(Enum, annotators("Reference")), entity_group
+                )
+            case other:
+                ValueError(f"There shouldn't be any of these {other}")
 
 
-def adjudicate_grouped_relations(
-    correctness: Correctness, relation_group: Iterable[Relation]
+def get_relation_arg_ids(relation: Relation) -> tuple[str, str]:
+    return relation.arg1.label_studio_id, relation.arg2.label_studio_id
+
+
+def adjudicate_correctness_grouped_relations(
+    annotator: Enum, relation_group: Iterable[Relation]
 ) -> Iterable[dict]:
-    return []
+    for id_directions, id_directions_group in groupby(
+        sorted(relation_group, key=get_relation_arg_ids),
+        key=get_relation_arg_ids,
+    ):
+        from_id, to_id = id_directions
+        relations = list(id_directions_group)
+        if len(relations) != 1:
+            ValueError(
+                f"Wrong number of relations from {from_id} to {to_id: {len(relations)}}"
+            )
+            return []
+        relation = cast(Relation, relations[0])
+        source_relations = [
+            json.loads(relation_source)
+            for relation_source in relation.source_annotations
+        ]
+        label_relations = [
+            entity for entity in source_relations if entity["type"] == "labels"
+        ]
+        if len(label_relations) != 1:
+            ValueError(
+                f"Wrong number of label relations in source annotations {len(label_relations)}"
+            )
+            return []
+        yield labels_relation_to_adjudication_relation(annotator, label_relations[0])
+        yield relation
 
 
 def adjudicate_relations(
@@ -272,6 +269,7 @@ def adjudicate_relations(
         Relation, CorrectnessMatrix[Relation]
     ],
 ) -> Iterable[dict]:
+    NotImplementedError()
     local_get_correctness = partial(
         get_correctness, relation_to_typed_correctness_matrix
     )
@@ -279,10 +277,19 @@ def adjudicate_relations(
         sorted(prediction_relations, key=local_get_correctness),
         key=local_get_correctness,
     ):
-        yield from adjudicate_grouped_relations(correctness, relation_group)
+        match correctness:
+            case Correctness.TRUE_POSITIVE:
+                yield from adjudicate_correctness_grouped_relations(
+                    cast(Enum, annotators("Agreement")), relation_group
+                )
 
-    for correctness, relation_group in groupby(
-        sorted(reference_relations, key=local_get_correctness),
-        key=local_get_correctness,
-    ):
-        yield from adjudicate_grouped_relations(correctness, relation_group)
+            case Correctness.FALSE_POSITIVE:
+                yield from adjudicate_correctness_grouped_relations(
+                    cast(Enum, annotators("Prediction")), relation_group
+                )
+            case Correctness.FALSE_NEGATIVE:
+                yield from adjudicate_correctness_grouped_relations(
+                    cast(Enum, annotators("Reference")), relation_group
+                )
+            case other:
+                ValueError(f"There shouldn't be any of these {other}")
