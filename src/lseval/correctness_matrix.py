@@ -1,6 +1,48 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
+from functools import lru_cache
 from typing import Any
+
+
+@lru_cache
+def precision(
+    true_positives: int,
+    true_negatives: int,
+    false_positives: int,
+    false_negatives: int,
+) -> float:
+    denominator = true_positives + false_positives
+    if denominator == 0:
+        return float("nan")
+    return true_positives / denominator
+
+
+@lru_cache
+def recall(
+    true_positives: int,
+    true_negatives: int,
+    false_positives: int,
+    false_negatives: int,
+) -> float:
+    denominator = true_positives + false_negatives
+    if denominator == 0:
+        return float("nan")
+    return true_positives / denominator
+
+
+@lru_cache
+def f_beta(precision: float, recall: float, beta: float) -> float:
+    beta_squared = pow(beta, 2.0)
+    denominator = (beta_squared * precision) + recall
+    if denominator == 0:
+        return float("nan")
+    return ((1 + beta_squared) * precision * recall) / denominator
+
+
+@lru_cache
+def f1(precision: float, recall: float) -> float:
+    return f_beta(precision, recall, beta=1.0)
 
 
 class Correctness(IntEnum):
@@ -52,28 +94,31 @@ class CorrectnessMatrix[T]:
         return datum in self.false_negatives
 
     def get_precision(self) -> float:
-        denominator = len(self.true_positives) + len(self.false_positives)
-        if denominator == 0:
-            return float("nan")
-        return len(self.true_positives) / denominator
+        return precision(
+            true_positives=len(self.true_positives),
+            true_negatives=len(self.true_negatives),
+            false_positives=len(self.false_positives),
+            false_negatives=len(self.false_negatives),
+        )
 
     def get_recall(self) -> float:
-        denominator = len(self.true_positives) + len(self.false_negatives)
-        if denominator == 0:
-            return float("nan")
-        return len(self.true_positives) / denominator
+        return recall(
+            true_positives=len(self.true_positives),
+            true_negatives=len(self.true_negatives),
+            false_positives=len(self.false_positives),
+            false_negatives=len(self.false_negatives),
+        )
 
     def get_f_beta(self, beta: float) -> float:
-        precision = self.get_precision()
-        recall = self.get_recall()
-        beta_squared = pow(beta, 2.0)
-        denominator = (beta_squared * precision) + recall
-        if denominator == 0:
-            return float("nan")
-        return ((1 + beta_squared) * precision * recall) / denominator
+        return f_beta(
+            precision=self.get_precision(), recall=self.get_recall(), beta=beta
+        )
 
     def get_f1(self) -> float:
-        return self.get_f_beta(beta=1.0)
+        return f1(
+            precision=self.get_precision(),
+            recall=self.get_recall(),
+        )
 
     def get_support(self) -> int:
         if self.support != len(self.true_positives) + len(self.false_negatives):
@@ -82,6 +127,14 @@ class CorrectnessMatrix[T]:
             )
             return -1
         return self.support
+
+    def to_correctness_totals(self) -> Mapping[Correctness, int]:
+        return {
+            Correctness.TRUE_POSITIVE: len(self.true_positives),
+            Correctness.TRUE_NEGATIVE: len(self.true_negatives),
+            Correctness.FALSE_POSITIVE: len(self.false_positives),
+            Correctness.FALSE_NEGATIVE: len(self.false_negatives),
+        }
 
     def __len__(self) -> int:
         return (
