@@ -2,9 +2,9 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from enum import Enum, EnumType
 from functools import partial
-from itertools import chain
+from itertools import chain, groupby
 
-from lseval.correctness_matrix import CorrectnessMatrix
+from lseval.correctness_matrix import CorrectnessMatrix, Correctness
 from lseval.datatypes import Entity, Relation
 
 
@@ -154,21 +154,33 @@ def build_preannotations(
     ]
 
 
-def labels_annotation_to_adjudication_annotation(
-    annotator: Enum, text_annotation: dict
-) -> dict:
+def labels_entity_to_adjudication_entity(annotator: Enum, labels_entity: dict) -> dict:
     return {
-        "id": text_annotation["id"],
+        "id": labels_entity["id"],
         "value": {
-            "start": text_annotation["value"]["start"],
-            "end": text_annotation["value"]["end"],
-            "text": text_annotation["value"]["text"],
-            "labels": [annotator.value],
+            "start": labels_entity["value"]["start"],
+            "end": labels_entity["value"]["end"],
+            "text": labels_entity["value"]["text"],
+            "labels": [
+                annotator.value
+            ],  # At first I thought to mix this with an extant entity but we(I) want to maintain separate label spaces
         },
         "from_name": "IAA",
         "to_name": "text",
         "type": "labels",
         "origin": "manual",
+    }
+
+
+def labels_relation_to_adjudication_relation(
+    annotator: Enum, labels_entity: dict
+) -> dict:
+    return {
+        "from_id": labels_entity["from_id"],
+        "to_id": labels_entity["to_id"],
+        "type": "relation",
+        "direction": labels_entity["right"],
+        "labels": [annotator.value],
     }
 
 
@@ -210,21 +222,67 @@ def insert_adjudication_data(
     )
 
 
+def get_correctness[T](
+    t_to_typed_correctness_matrix: Mapping[T, CorrectnessMatrix[T]],
+    t: T,
+) -> Correctness:
+    correctness_matrix = t_to_typed_correctness_matrix.get(t)
+    if correctness_matrix is None:
+        return Correctness.NA
+    return correctness_matrix.get_correctness(t)
+
+
+def adjudicate_grouped_entities(
+    correctness: Correctness, entity_group: Iterable[Entity]
+) -> Iterable[dict]:
+    return []
+
+
 def adjudicate_entities(
     annotators: EnumType,
     prediction_entities: Iterable[Entity],
     reference_entities: Iterable[Entity],
     entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
 ) -> Iterable[dict]:
+    local_get_correctness = partial(get_correctness, entity_to_typed_correctness_matrix)
+    for correctness, entity_group in groupby(
+        sorted(prediction_entities, key=local_get_correctness),
+        key=local_get_correctness,
+    ):
+        yield from adjudicate_grouped_entities(correctness, entity_group)
+
+    for correctness, entity_group in groupby(
+        sorted(reference_entities, key=local_get_correctness),
+        key=local_get_correctness,
+    ):
+        yield from adjudicate_grouped_entities(correctness, entity_group)
+
+
+def adjudicate_grouped_relations(
+    correctness: Correctness, relation_group: Iterable[Relation]
+) -> Iterable[dict]:
     return []
 
 
 def adjudicate_relations(
     annotators: EnumType,
-    prediction_entities: Iterable[Relation],
-    reference_entities: Iterable[Relation],
+    prediction_relations: Iterable[Relation],
+    reference_relations: Iterable[Relation],
     relation_to_typed_correctness_matrix: Mapping[
         Relation, CorrectnessMatrix[Relation]
     ],
 ) -> Iterable[dict]:
-    return []
+    local_get_correctness = partial(
+        get_correctness, relation_to_typed_correctness_matrix
+    )
+    for correctness, relation_group in groupby(
+        sorted(prediction_relations, key=local_get_correctness),
+        key=local_get_correctness,
+    ):
+        yield from adjudicate_grouped_relations(correctness, relation_group)
+
+    for correctness, relation_group in groupby(
+        sorted(reference_relations, key=local_get_correctness),
+        key=local_get_correctness,
+    ):
+        yield from adjudicate_grouped_relations(correctness, relation_group)

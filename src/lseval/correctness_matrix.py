@@ -1,5 +1,14 @@
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import Any
+
+
+class Correctness(IntEnum):
+    TRUE_POSITIVE = 0
+    TRUE_NEGATIVE = 1
+    FALSE_POSITIVE = 2
+    FALSE_NEGATIVE = 3
+    NA = 4
 
 
 @dataclass
@@ -9,6 +18,18 @@ class CorrectnessMatrix[T]:
     false_positives: set[T] = field(default_factory=set)
     false_negatives: set[T] = field(default_factory=set)
     support: int = 0
+
+    def get_correctness(self, datum: Any) -> Correctness:
+        if self.is_true_positive(datum):
+            return Correctness.TRUE_POSITIVE
+        elif self.is_true_negative(datum):
+            return Correctness.TRUE_NEGATIVE
+        elif self.is_false_positive(datum):
+            return Correctness.FALSE_POSITIVE
+        elif self.is_false_negative(datum):
+            return Correctness.FALSE_NEGATIVE
+        else:
+            return Correctness.NA
 
     def __contains__(self, datum: Any) -> bool:
         return (
@@ -61,3 +82,11 @@ class CorrectnessMatrix[T]:
             )
             return -1
         return self.support
+
+    def __len__(self) -> int:
+        return (
+            len(self.false_negatives)
+            + len(self.false_positives)
+            + len(self.true_negatives)
+            + len(self.true_positives)
+        )
