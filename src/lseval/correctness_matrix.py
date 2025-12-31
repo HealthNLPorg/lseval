@@ -53,6 +53,28 @@ class Correctness(IntEnum):
     NA = 4
 
 
+def score_totals(
+    correctness_totals: Mapping[Correctness, int],
+) -> tuple[float, float, float, int]:
+    _precision = precision(
+        true_positives=correctness_totals[Correctness.TRUE_POSITIVE],
+        true_negatives=correctness_totals[Correctness.TRUE_NEGATIVE],
+        false_positives=correctness_totals[Correctness.FALSE_POSITIVE],
+        false_negatives=correctness_totals[Correctness.FALSE_NEGATIVE],
+    )
+    _recall = recall(
+        true_positives=correctness_totals[Correctness.TRUE_POSITIVE],
+        true_negatives=correctness_totals[Correctness.TRUE_NEGATIVE],
+        false_positives=correctness_totals[Correctness.FALSE_POSITIVE],
+        false_negatives=correctness_totals[Correctness.FALSE_NEGATIVE],
+    )
+    support = (
+        correctness_totals[Correctness.TRUE_POSITIVE]
+        + correctness_totals[Correctness.FALSE_NEGATIVE]
+    )
+    return f1(_precision, _recall), _precision, _recall, support
+
+
 @dataclass
 class CorrectnessMatrix[T]:
     true_positives: set[T] = field(default_factory=set)
