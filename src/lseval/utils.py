@@ -82,7 +82,7 @@ def parse_cuis(entity: dict) -> tuple[str, ...]:
     if entity_value is None:
         ValueError(f"Missing value field for CUIS entity: {entity}")
         return ()
-    return tuple(sorted(entity_value.get("text", [])))
+    return tuple(sorted(filter(None, entity_value.get("text", []))))
 
 
 def parse_text(entity: dict) -> str | None:
