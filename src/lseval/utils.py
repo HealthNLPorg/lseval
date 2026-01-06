@@ -144,13 +144,15 @@ def organize_file_by_annotator_id(
 
     return {
         annotations["completed_by"]: id_annotations_to_file(
-            file_id, annotations["result"]
+            file_id, annotations["result"], raw_file_dictionary["data"]["text"]
         )
         for annotations in id_annotations_ls
     }
 
 
-def id_annotations_to_file(file_id: int, id_annotations: list[dict]) -> AnnotatedFile:
+def id_annotations_to_file(
+    file_id: int, id_annotations: list[dict], file_text: str
+) -> AnnotatedFile:
     def is_relation(annotation: dict) -> bool:
         return annotation["type"] == "relation"
 
@@ -161,6 +163,7 @@ def id_annotations_to_file(file_id: int, id_annotations: list[dict]) -> Annotate
     )
     return AnnotatedFile(
         file_id=file_id,
+        file_text=file_text,
         entities=frozenset(
             entity for entity in ann_id_to_entity.values()
         ),  # Mapping has the values method as a mixin https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping

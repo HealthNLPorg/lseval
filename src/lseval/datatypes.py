@@ -137,6 +137,7 @@ class Relation:
 @dataclass(eq=True, frozen=True)
 class AnnotatedFile:
     file_id: int
+    file_text: str
     entities: frozenset[Entity] = field(default_factory=frozenset)
     relations: frozenset[Relation] = field(default_factory=frozenset)
 
