@@ -147,7 +147,6 @@ def adjudicate_correctness_grouped_entities(
         key=attrgetter("label_studio_id"),
     ):
         entities = list(annotation_id_group)
-        print(f"total entities: {len(entities)}")
         if len(entities) != 1:
             ValueError(f"Wrong number of entities {len(entities)}")
             return []
