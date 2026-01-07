@@ -69,21 +69,30 @@ def build_preannotations(
     ]
 
 
-def labels_entity_to_adjudication_entity(annotator: Enum, labels_entity: dict) -> dict:
+def labels_entity_to_adjudication_entity(
+    annotator: Enum,
+    labels_entity: dict,
+    from_name: str = "IAA",
+    to_name: str = "text",
+    entity_type: str = "choices",
+    # entity_type: str = "labels",
+    origin: str = "prediction",
+) -> dict:
+    print(annotator.value)
     return {
-        "id": labels_entity["id"],
         "value": {
             "start": labels_entity["value"]["start"],
             "end": labels_entity["value"]["end"],
             "text": labels_entity["value"]["text"],
-            "labels": [
+            entity_type: [
                 annotator.value
             ],  # At first I thought to mix this with an extant entity but we(I) want to maintain separate label spaces
         },
-        "from_name": "IAA",
-        "to_name": "text",
-        "type": "labels",
-        "origin": "manual",
+        "id": labels_entity["id"],
+        "from_name": from_name,
+        "to_name": to_name,
+        "type": entity_type,
+        "origin": origin,
     }
 
 
@@ -163,7 +172,9 @@ def adjudicate_correctness_grouped_entities(
             )
             return []
         yield labels_entity_to_adjudication_entity(annotator, label_entities[0])
-        yield from source_entities
+        for entity in source_entities:
+            entity["origin"] = "prediction"
+            yield entity
 
 
 def adjudicate_entities(
