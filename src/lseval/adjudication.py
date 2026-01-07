@@ -2,7 +2,6 @@ import json
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from enum import Enum, EnumType
-from functools import partial
 from itertools import chain, groupby
 from operator import attrgetter
 from typing import cast
@@ -31,17 +30,11 @@ def build_adjudication_file(
     # which aren't annotations
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: Iterable[Entity],
-    reference_entities: Iterable[Entity],
-    prediction_relations: Iterable[Relation],
-    reference_relations: Iterable[Relation],
     # Temporary (?) dumb way to handle type enforcement
     # from the "agnostic" API end
-    entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
+    entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     # You know what?  Handle the FN wrangling upstream too
-    relation_to_typed_correctness_matrix: Mapping[
-        Relation, CorrectnessMatrix[Relation]
-    ],
+    relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
 ) -> dict:
     return {
         "id": file_id,
@@ -50,12 +43,8 @@ def build_adjudication_file(
             prediction_id=file_id + total_files,
             reference_annotator=reference_annotator,
             prediction_annotator=prediction_annotator,
-            prediction_entities=prediction_entities,
-            reference_entities=reference_entities,
-            prediction_relations=prediction_relations,
-            reference_relations=reference_relations,
-            entity_to_typed_correctness_matrix=entity_to_typed_correctness_matrix,
-            relation_to_typed_correctness_matrix=relation_to_typed_correctness_matrix,
+            entity_correctness_matrices=entity_correctness_matrices,
+            relation_correctness_matrices=relation_correctness_matrices,
         ),
     }
 
@@ -64,14 +53,8 @@ def build_preannotations(
     prediction_id: int,
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: Iterable[Entity],
-    reference_entities: Iterable[Entity],
-    prediction_relations: Iterable[Relation],
-    reference_relations: Iterable[Relation],
-    entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
-    relation_to_typed_correctness_matrix: Mapping[
-        Relation, CorrectnessMatrix[Relation]
-    ],
+    entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
+    relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
 ) -> list[dict]:
     return [
         {
@@ -79,12 +62,8 @@ def build_preannotations(
             "result": insert_adjudication_data(
                 reference_annotator=reference_annotator,
                 prediction_annotator=prediction_annotator,
-                prediction_entities=prediction_entities,
-                reference_entities=reference_entities,
-                prediction_relations=prediction_relations,
-                reference_relations=reference_relations,
-                entity_to_typed_correctness_matrix=entity_to_typed_correctness_matrix,
-                relation_to_typed_correctness_matrix=relation_to_typed_correctness_matrix,
+                entity_correctness_matrices=entity_correctness_matrices,
+                relation_correctness_matrices=relation_correctness_matrices,
             ),
         }
     ]
@@ -134,14 +113,8 @@ def get_correctness[T](
 def insert_adjudication_data(
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: Iterable[Entity],
-    reference_entities: Iterable[Entity],
-    prediction_relations: Iterable[Relation],
-    reference_relations: Iterable[Relation],
-    entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
-    relation_to_typed_correctness_matrix: Mapping[
-        Relation, CorrectnessMatrix[Relation]
-    ],
+    entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
+    relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
 ) -> list[dict]:
     annotators = Enum(
         "Annotator",
@@ -153,25 +126,13 @@ def insert_adjudication_data(
     )
     result = list(
         chain(
-            # map(
-            #     json.loads,
-            #     chain.from_iterable(map(attrgetter("source_annotations"), prediction_entities)),
-            # ),
-            # map(
-            #     json.loads,
-            #     chain.from_iterable(map(attrgetter("source_annotations"), prediction_relations)),
-            # ),
             adjudicate_entities(
                 annotators,
-                prediction_entities,
-                reference_entities,
-                entity_to_typed_correctness_matrix,
+                entity_correctness_matrices,
             ),
             adjudicate_relations(
                 annotators,
-                prediction_relations,
-                reference_relations,
-                relation_to_typed_correctness_matrix,
+                relation_correctness_matrices,
             ),
         )
     )
@@ -208,39 +169,18 @@ def adjudicate_correctness_grouped_entities(
 
 def adjudicate_entities(
     annotators: EnumType,
-    prediction_entities: Iterable[Entity],
-    reference_entities: Iterable[Entity],
-    entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
+    correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
 ) -> Iterable[dict]:
-    local_get_correctness = partial(get_correctness, entity_to_typed_correctness_matrix)
-    for correctness, entity_group in groupby(
-        sorted(
-            chain(prediction_entities, reference_entities), key=local_get_correctness
-        ),
-        key=local_get_correctness,
-    ):
-        entity_group = list(entity_group)
-        print(correctness)
-        print(len(entity_group))
-        match correctness:
-            case Correctness.TRUE_POSITIVE:
-                print("True positives")
-                yield from adjudicate_correctness_grouped_entities(
-                    cast(Enum, annotators("Agreement")), entity_group
-                )
-
-            case Correctness.FALSE_POSITIVE:
-                print("False positives")
-                yield from adjudicate_correctness_grouped_entities(
-                    cast(Enum, annotators("Prediction")), entity_group
-                )
-            case Correctness.FALSE_NEGATIVE:
-                print("False negatives")
-                yield from adjudicate_correctness_grouped_entities(
-                    cast(Enum, annotators("Reference")), entity_group
-                )
-            case other:
-                ValueError(f"There shouldn't be any of these {other}")
+    for correctness_matrix in correctness_matrices:
+        yield from adjudicate_correctness_grouped_entities(
+            cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+        )
+        yield from adjudicate_correctness_grouped_entities(
+            cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
+        )
+        yield from adjudicate_correctness_grouped_entities(
+            cast(Enum, annotators("Reference")), correctness_matrix.false_negatives
+        )
 
 
 def get_relation_arg_ids(relation: Relation) -> tuple[str, str]:
@@ -280,36 +220,15 @@ def adjudicate_correctness_grouped_relations(
 
 def adjudicate_relations(
     annotators: EnumType,
-    prediction_relations: Iterable[Relation],
-    reference_relations: Iterable[Relation],
-    relation_to_typed_correctness_matrix: Mapping[
-        Relation, CorrectnessMatrix[Relation]
-    ],
+    correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
 ) -> Iterable[dict]:
-    NotImplementedError()
-    local_get_correctness = partial(
-        get_correctness, relation_to_typed_correctness_matrix
-    )
-    for correctness, relation_group in groupby(
-        sorted(prediction_relations, key=local_get_correctness),
-        key=local_get_correctness,
-    ):
-        relation_group = list(relation_group)
-        # print(correctness)
-        # print(len(relation_group))
-        match correctness:
-            case Correctness.TRUE_POSITIVE:
-                yield from adjudicate_correctness_grouped_relations(
-                    cast(Enum, annotators("Agreement")), relation_group
-                )
-
-            case Correctness.FALSE_POSITIVE:
-                yield from adjudicate_correctness_grouped_relations(
-                    cast(Enum, annotators("Prediction")), relation_group
-                )
-            case Correctness.FALSE_NEGATIVE:
-                yield from adjudicate_correctness_grouped_relations(
-                    cast(Enum, annotators("Reference")), relation_group
-                )
-            case other:
-                ValueError(f"There shouldn't be any of these {other}")
+    for correctness_matrix in correctness_matrices:
+        yield from adjudicate_correctness_grouped_relations(
+            cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+        )
+        yield from adjudicate_correctness_grouped_relations(
+            cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
+        )
+        yield from adjudicate_correctness_grouped_relations(
+            cast(Enum, annotators("Reference")), correctness_matrix.false_negatives
+        )
