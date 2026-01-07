@@ -31,10 +31,10 @@ def build_adjudication_file(
     # which aren't annotations
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: set[Entity],
-    reference_entities: set[Entity],
-    prediction_relations: list[Relation],
-    reference_relations: list[Relation],
+    prediction_entities: Iterable[Entity],
+    reference_entities: Iterable[Entity],
+    prediction_relations: Iterable[Relation],
+    reference_relations: Iterable[Relation],
     # Temporary (?) dumb way to handle type enforcement
     # from the "agnostic" API end
     entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
@@ -64,10 +64,10 @@ def build_preannotations(
     prediction_id: int,
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: set[Entity],
-    reference_entities: set[Entity],
-    prediction_relations: list[Relation],
-    reference_relations: list[Relation],
+    prediction_entities: Iterable[Entity],
+    reference_entities: Iterable[Entity],
+    prediction_relations: Iterable[Relation],
+    reference_relations: Iterable[Relation],
     entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
     relation_to_typed_correctness_matrix: Mapping[
         Relation, CorrectnessMatrix[Relation]
@@ -133,10 +133,10 @@ def get_correctness[T](
 def insert_adjudication_data(
     reference_annotator: str,
     prediction_annotator: str,
-    prediction_entities: set[Entity],
-    reference_entities: set[Entity],
-    prediction_relations: list[Relation],
-    reference_relations: list[Relation],
+    prediction_entities: Iterable[Entity],
+    reference_entities: Iterable[Entity],
+    prediction_relations: Iterable[Relation],
+    reference_relations: Iterable[Relation],
     entity_to_typed_correctness_matrix: Mapping[Entity, CorrectnessMatrix[Entity]],
     relation_to_typed_correctness_matrix: Mapping[
         Relation, CorrectnessMatrix[Relation]
