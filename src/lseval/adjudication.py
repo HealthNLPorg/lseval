@@ -126,6 +126,7 @@ def get_correctness[T](
 ) -> Correctness:
     correctness_matrix = t_to_typed_correctness_matrix.get(t)
     if correctness_matrix is None:
+        raise ValueError("All entities should be accounted for")
         return Correctness.NA
     return correctness_matrix.get_correctness(t)
 
@@ -150,8 +151,16 @@ def insert_adjudication_data(
             ("Agreement", "Agreement"),
         ],
     )
-    return list(
+    result = list(
         chain(
+            # map(
+            #     json.loads,
+            #     chain.from_iterable(map(attrgetter("source_annotations"), prediction_entities)),
+            # ),
+            # map(
+            #     json.loads,
+            #     chain.from_iterable(map(attrgetter("source_annotations"), prediction_relations)),
+            # ),
             adjudicate_entities(
                 annotators,
                 prediction_entities,
@@ -166,6 +175,7 @@ def insert_adjudication_data(
             ),
         )
     )
+    return result
 
 
 def adjudicate_correctness_grouped_entities(
@@ -176,6 +186,7 @@ def adjudicate_correctness_grouped_entities(
         key=attrgetter("label_studio_id"),
     ):
         entities = list(annotation_id_group)
+        print(f"total entities: {len(entities)}")
         if len(entities) != 1:
             ValueError(f"Wrong number of entities {len(entities)}")
             return []
@@ -208,17 +219,23 @@ def adjudicate_entities(
         ),
         key=local_get_correctness,
     ):
+        entity_group = list(entity_group)
+        print(correctness)
+        print(len(entity_group))
         match correctness:
             case Correctness.TRUE_POSITIVE:
+                print("True positives")
                 yield from adjudicate_correctness_grouped_entities(
                     cast(Enum, annotators("Agreement")), entity_group
                 )
 
             case Correctness.FALSE_POSITIVE:
+                print("False positives")
                 yield from adjudicate_correctness_grouped_entities(
                     cast(Enum, annotators("Prediction")), entity_group
                 )
             case Correctness.FALSE_NEGATIVE:
+                print("False negatives")
                 yield from adjudicate_correctness_grouped_entities(
                     cast(Enum, annotators("Reference")), entity_group
                 )
@@ -277,6 +294,9 @@ def adjudicate_relations(
         sorted(prediction_relations, key=local_get_correctness),
         key=local_get_correctness,
     ):
+        relation_group = list(relation_group)
+        # print(correctness)
+        # print(len(relation_group))
         match correctness:
             case Correctness.TRUE_POSITIVE:
                 yield from adjudicate_correctness_grouped_relations(

@@ -52,6 +52,10 @@ class Correctness(IntEnum):
     FALSE_NEGATIVE = 3
     NA = 4
 
+    @classmethod
+    def _missing_(cls, value):
+        return Correctness.NA
+
 
 def score_totals(
     correctness_totals: Mapping[Correctness, int],
