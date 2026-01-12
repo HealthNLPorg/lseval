@@ -15,7 +15,7 @@ def update_schema(
     reference_annotator: str,
     prediction_annotator: str,
 ) -> ET.ElementTree | None:
-    NotImplementedError("Figure this out")
+    raise NotImplementedError("Figure this out")
     return None
 
 
@@ -157,7 +157,7 @@ def adjudicate_correctness_grouped_entities(
     ):
         entities = list(annotation_id_group)
         if len(entities) != 1:
-            ValueError(f"Wrong number of entities {len(entities)}")
+            raise ValueError(f"Wrong number of entities {len(entities)}")
             return []
         entity = cast(Entity, entities[0])
         source_entities = [
@@ -167,7 +167,7 @@ def adjudicate_correctness_grouped_entities(
             entity for entity in source_entities if entity["type"] == "labels"
         ]
         if len(label_entities) != 1:
-            ValueError(
+            raise ValueError(
                 f"Wrong number of label entities in source annotations {len(label_entities)}"
             )
             return []
@@ -207,7 +207,7 @@ def adjudicate_correctness_grouped_relations(
         from_id, to_id = id_directions
         relations = list(id_directions_group)
         if len(relations) != 1:
-            ValueError(
+            raise ValueError(
                 f"Wrong number of relations from {from_id} to {to_id: {len(relations)}}"
             )
             return []
@@ -220,7 +220,7 @@ def adjudicate_correctness_grouped_relations(
             entity for entity in source_relations if entity["type"] == "labels"
         ]
         if len(label_relations) != 1:
-            ValueError(
+            raise ValueError(
                 f"Wrong number of label relations in source annotations {len(label_relations)}"
             )
             return []

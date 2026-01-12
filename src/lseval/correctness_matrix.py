@@ -148,7 +148,7 @@ class CorrectnessMatrix[T]:
 
     def get_support(self) -> int:
         if self.support != len(self.true_positives) + len(self.false_negatives):
-            ValueError(
+            raise ValueError(
                 f"Supports should be {self.support}, actual total of true positives and false negatives is {len(self.true_positives) + len(self.false_negatives)}"
             )
             return -1

@@ -68,7 +68,7 @@ class Entity:
 
     def __post_init__(self):
         if self.span[1] <= self.span[0]:
-            ValueError(f"Invalid span {self.span}")
+            raise ValueError(f"Invalid span {self.span}")
 
     def span_match(self, other: Any, overlap: bool = False) -> bool:
         if not isinstance(other, Entity):

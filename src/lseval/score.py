@@ -1,8 +1,18 @@
+import logging
+
 from .correctness_matrix import CorrectnessMatrix
 from .datatypes import (
     Entity,
     Relation,
     overlap_match,
+)
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
+    level=logging.INFO,
 )
 
 
@@ -23,9 +33,19 @@ def overlap_entity_correctness_matrix(
     predicted_entities: set[Entity], reference_entities: set[Entity]
 ) -> CorrectnessMatrix:
     reference_span_to_entity = {entity.span: entity for entity in reference_entities}
-    assert len(reference_span_to_entity) == len(reference_entities)
+    if len(reference_span_to_entity) != len(reference_entities):
+        logger.warning(
+            "Reference entities, mismatch in unique spans vs total entities: %d vs %d",
+            len(reference_span_to_entity),
+            len(reference_entities),
+        )
     predicted_span_to_entity = {entity.span: entity for entity in predicted_entities}
-    assert len(predicted_span_to_entity) == len(predicted_entities)
+    if len(predicted_span_to_entity) != len(predicted_entities):
+        logger.warning(
+            "Predicted entities, mismatch in unique spans vs total entities: %d vs %d",
+            len(predicted_span_to_entity),
+            len(predicted_entities),
+        )
     sorted_reference_spans = sorted(reference_span_to_entity.keys())
     sorted_predicted_spans = sorted(predicted_span_to_entity.keys())
     true_positive_entities = set()
