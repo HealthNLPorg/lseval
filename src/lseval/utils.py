@@ -52,7 +52,7 @@ def get_unique_label_studio_id(
         if label_studio_id not in used_ids:
             used_ids.add(label_studio_id)
             return label_studio_id, used_ids
-    ValueError(
+    raise ValueError(
         f"Could not create a unique label string against {len(used_ids)} with {tries} tries"
     )
     return "_INVALID_LABEL_STUDIO_ID_", used_ids
@@ -60,15 +60,15 @@ def get_unique_label_studio_id(
 
 def parse_dtr(entity: dict) -> DocTimeRel:
     if entity.get("from_name") != "DocTimeRel":
-        ValueError(f"Wrong entity type for parse_dtr: {entity['from_name']}")
+        raise ValueError(f"Wrong entity type for parse_dtr: {entity['from_name']}")
         return DocTimeRel.NA
     entity_value = entity.get("value")
     if entity_value is None:
-        ValueError(f"Missing value field for DTR entity: {entity}")
+        raise ValueError(f"Missing value field for DTR entity: {entity}")
         return DocTimeRel.NA
     dtr_choices = entity_value.get("choices", [])
     if len(dtr_choices) != 1:
-        ValueError(f"Invalid values for DTR choices: {dtr_choices}")
+        raise ValueError(f"Invalid values for DTR choices: {dtr_choices}")
         return DocTimeRel.NA
     # Don't worry there's a _missing_ method
     return DocTimeRel(dtr_choices[0])
@@ -76,22 +76,22 @@ def parse_dtr(entity: dict) -> DocTimeRel:
 
 def parse_cuis(entity: dict) -> tuple[str, ...]:
     if entity.get("from_name") != "CUI":
-        ValueError(f"Wrong entity type for parse_cuis: {entity['from_name']}")
+        raise ValueError(f"Wrong entity type for parse_cuis: {entity['from_name']}")
         return ()
     entity_value = entity.get("value")
     if entity_value is None:
-        ValueError(f"Missing value field for CUIS entity: {entity}")
+        raise ValueError(f"Missing value field for CUIS entity: {entity}")
         return ()
     return tuple(sorted(filter(None, entity_value.get("text", []))))
 
 
 def parse_text(entity: dict) -> str | None:
     if entity.get("from_name") != "DocTimeRel" and entity.get("from_name") != "Event":
-        ValueError(f"Wrong entity type for parse_text: {entity['from_name']}")
+        raise ValueError(f"Wrong entity type for parse_text: {entity['from_name']}")
         return None
     entity_value = entity.get("value")
     if entity_value is None:
-        ValueError(f"Missing value field for DTR/Event entity: {entity}")
+        raise ValueError(f"Missing value field for DTR/Event entity: {entity}")
         return None
     return entity_value.get("text", [])
 
@@ -129,7 +129,7 @@ def organize_file_annotations_by_annotator[T](
     merged = {}
     for annotator, annotated_files in annotator_to_annotated_files.items():
         if len(annotated_files) > 1:
-            ValueError(
+            raise ValueError(
                 f"Single annotator {annotator} has {len(annotated_files)} annotations done under multiple IDs - merge logic not presently supported - consult {annotator} for selection"
             )
         merged[annotator] = annotated_files.pop()
@@ -178,7 +178,7 @@ def organize_entities_by_ann_id(
     def get_annotation_id(entity_annotation: dict) -> str:
         annotation_id = entity_annotation.get("id")
         if annotation_id is None:
-            ValueError(f"Entity: {entity_annotation} is missing id")
+            raise ValueError(f"Entity: {entity_annotation} is missing id")
         return cast(str, annotation_id)
 
     annotation_id_to_entity = {}
@@ -196,7 +196,7 @@ def organize_entities_by_ann_id(
 def get_indices(entity: dict) -> tuple[int, int]:
     e_value = entity.get("value")
     if e_value is None:
-        ValueError(f"Entity missing value field {entity}")
+        raise ValueError(f"Entity missing value field {entity}")
         return -1, -1
     else:
         return e_value["start"], e_value["end"]
@@ -204,15 +204,17 @@ def get_indices(entity: dict) -> tuple[int, int]:
 
 def parse_event_type(entity: dict) -> str | None:
     if entity.get("from_name") != "Event":
-        ValueError(f"Wrong entity type for parse_event_type: {entity['from_name']}")
+        raise ValueError(
+            f"Wrong entity type for parse_event_type: {entity['from_name']}"
+        )
         return None
     entity_value = entity.get("value")
     if entity_value is None:
-        ValueError(f"Missing value field for event type entity: {entity}")
+        raise ValueError(f"Missing value field for event type entity: {entity}")
         return None
     event_type_labels = entity_value.get("labels", [])
     if len(event_type_labels) != 1:
-        ValueError(f"Invalid values for event type labels: {event_type_labels}")
+        raise ValueError(f"Invalid values for event type labels: {event_type_labels}")
         return None
     # Don't worry there's a _missing_ method
     return str(event_type_labels[0])
@@ -238,7 +240,7 @@ def coordinate_attribute_entities_to_single(
     first_inds = get_indices(entities[0])
 
     if not all(get_indices(entity) == first_inds for entity in entities[1:]):
-        ValueError(f"Entities not matching on indices {entities}")
+        raise ValueError(f"Entities not matching on indices {entities}")
         return None
 
     raw_event = entity_attribute_to_instances.get("Event")
