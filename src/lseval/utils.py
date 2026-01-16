@@ -77,12 +77,14 @@ def parse_dtr(entity: dict) -> DocTimeRel:
 def parse_cuis(entity: dict) -> tuple[str, ...]:
     if entity.get("from_name") != "CUI":
         raise ValueError(f"Wrong entity type for parse_cuis: {entity['from_name']}")
-        return ()
     entity_value = entity.get("value")
     if entity_value is None:
         raise ValueError(f"Missing value field for CUIS entity: {entity}")
-        return ()
-    return tuple(sorted(filter(None, entity_value.get("text", []))))
+    return tuple(
+        sorted(
+            map(str.upper, map(str.strip, filter(None, entity_value.get("text", []))))
+        )
+    )
 
 
 def parse_text(entity: dict) -> str | None:

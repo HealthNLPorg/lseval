@@ -75,17 +75,15 @@ def labels_entity_to_adjudication_entity(
     from_name: str = "IAA",
     to_name: str = "text",
     entity_type: str = "choices",
-    # entity_type: str = "labels",
     origin: str = "prediction",
 ) -> dict:
-    print(annotator.value)
     return {
         "value": {
             "start": labels_entity["value"]["start"],
             "end": labels_entity["value"]["end"],
             "text": labels_entity["value"]["text"],
             entity_type: [
-                annotator.value
+                annotator.name
             ],  # At first I thought to mix this with an extant entity but we(I) want to maintain separate label spaces
         },
         "id": labels_entity["id"],
@@ -96,7 +94,7 @@ def labels_entity_to_adjudication_entity(
     }
 
 
-def labels_relation_to_adjudication_relation(
+def labels_relation_to_json_adjudication_relation(
     annotator: Enum, labels_relation: dict
 ) -> dict:
     return {
@@ -104,7 +102,17 @@ def labels_relation_to_adjudication_relation(
         "to_id": labels_relation["to_id"],
         "type": "relation",
         "direction": labels_relation["direction"],
-        "labels": [annotator.value],
+        "labels": [annotator.name],
+    }
+
+
+def labels_relation_to_json_relation(labels_relation: dict) -> dict:
+    return {
+        "from_id": labels_relation["from_id"],
+        "to_id": labels_relation["to_id"],
+        "type": "relation",
+        "direction": labels_relation["direction"],
+        "labels": labels_relation["labels"],
     }
 
 
@@ -224,8 +232,10 @@ def adjudicate_correctness_grouped_relations(
                 f"Wrong number of label relations in source annotations {len(label_relations)}"
             )
             return []
-        yield labels_relation_to_adjudication_relation(annotator, label_relations[0])
-        yield relation
+        yield labels_relation_to_json_adjudication_relation(
+            annotator, label_relations[0]
+        )
+        yield labels_relation_to_json_relation(label_relations[0])
 
 
 def adjudicate_relations(
