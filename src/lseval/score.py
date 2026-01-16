@@ -1,4 +1,6 @@
 import logging
+from collections import defaultdict
+from itertools import chain
 
 from .correctness_matrix import CorrectnessMatrix
 from .datatypes import (
@@ -32,22 +34,33 @@ def build_entity_correctness_matrix(
 def overlap_entity_correctness_matrix(
     predicted_entities: set[Entity], reference_entities: set[Entity]
 ) -> CorrectnessMatrix:
-    reference_span_to_entity = {entity.span: entity for entity in reference_entities}
-    if len(reference_span_to_entity) != len(reference_entities):
-        logger.warning(
-            "Reference entities, mismatch in unique spans vs total entities: %d vs %d",
-            len(reference_span_to_entity),
-            len(reference_entities),
-        )
-    predicted_span_to_entity = {entity.span: entity for entity in predicted_entities}
-    if len(predicted_span_to_entity) != len(predicted_entities):
-        logger.warning(
-            "Predicted entities, mismatch in unique spans vs total entities: %d vs %d",
-            len(predicted_span_to_entity),
-            len(predicted_entities),
-        )
-    sorted_reference_spans = sorted(reference_span_to_entity.keys())
-    sorted_predicted_spans = sorted(predicted_span_to_entity.keys())
+    reference_span_to_entities = defaultdict(list)
+    for entity in reference_entities:
+        reference_span_to_entities[entity.span].append(entity)
+
+    for span, entities in reference_span_to_entities.items():
+        if len(entities) > 1:
+            logger.warning(
+                "%d reference entities from %d share the span %s",
+                len(entities),
+                entities[0].file_id,
+                str(span),
+            )
+
+    predicted_span_to_entities = defaultdict(list)
+    for entity in predicted_entities:
+        predicted_span_to_entities[entity.span].append(entity)
+
+    for span, entities in predicted_span_to_entities.items():
+        if len(entities) > 1:
+            logger.warning(
+                "%d predicted entities from %d share the span %s",
+                len(entities),
+                entities[0].file_id,
+                str(span),
+            )
+    sorted_reference_spans = sorted(reference_span_to_entities.keys())
+    sorted_predicted_spans = sorted(predicted_span_to_entities.keys())
     true_positive_entities = set()
     false_positive_entities = set()
     false_negative_entities = set()
@@ -59,15 +72,15 @@ def overlap_entity_correctness_matrix(
     # a ton of intervals with a lot of interval intersections
     # The wrinkle being overlapping is not an equivalence
     # relation.  I.e. is reflexive and symmetric but not transitive
-    for span, entity in predicted_span_to_entity.items():
+    for span, entities in predicted_span_to_entities.items():
         if any(overlap_match(span, ref_span) for ref_span in sorted_reference_spans):
-            true_positive_entities.add(entity)
+            true_positive_entities.add(entities)
         else:
-            false_positive_entities.add(entity)
-    for span, entity in reference_span_to_entity.items():
+            false_positive_entities.add(entities)
+    for span, entities in reference_span_to_entities.items():
         if any(overlap_match(span, pred_span) for pred_span in sorted_predicted_spans):
             continue
-        false_negative_entities.add(entity)
+        false_negative_entities.add(entities)
 
     return CorrectnessMatrix(
         true_positives=true_positive_entities,
@@ -81,26 +94,51 @@ def exact_entity_correctness_matrix(
     predicted_entities: set[Entity], reference_entities: set[Entity]
 ) -> CorrectnessMatrix:
     # want to keep this span level due to the extension logic, can re-work it later
-    reference_span_to_entity = {entity.span: entity for entity in reference_entities}
-    assert len(reference_span_to_entity) == len(reference_entities)
-    predicted_span_to_entity = {entity.span: entity for entity in predicted_entities}
-    assert len(predicted_span_to_entity) == len(predicted_entities)
+    reference_span_to_entities = defaultdict(list)
+    for entity in reference_entities:
+        reference_span_to_entities[entity.span].append(entity)
+
+    for span, entities in reference_span_to_entities.items():
+        if len(entities) > 1:
+            logger.warning(
+                "%d reference entities from %d share the span %s",
+                len(entities),
+                entities[0].file_id,
+                str(span),
+            )
+
+    predicted_span_to_entities = defaultdict(list)
+    for entity in predicted_entities:
+        predicted_span_to_entities[entity.span].append(entity)
+
+    for span, entities in predicted_span_to_entities.items():
+        if len(entities) > 1:
+            logger.warning(
+                "%d predicted entities from %d share the span %s",
+                len(entities),
+                entities[0].file_id,
+                str(span),
+            )
     true_positive_entities = {
-        predicted_span_to_entity[predicted_span]
-        for predicted_span in reference_span_to_entity.keys()
-        & predicted_span_to_entity.keys()
+        predicted_span_to_entities[predicted_span]
+        for predicted_span in reference_span_to_entities.keys()
+        & predicted_span_to_entities.keys()
     }
 
-    false_positive_entities = {
-        predicted_span_to_entity[predicted_span]
-        for predicted_span in predicted_span_to_entity.keys()
-        - reference_span_to_entity.keys()
-    }
-    false_negative_entities = {
-        reference_span_to_entity[predicted_span]
-        for predicted_span in reference_span_to_entity.keys()
-        - predicted_span_to_entity.keys()
-    }
+    false_positive_entities = set(
+        chain.from_iterable(
+            predicted_span_to_entities[predicted_span]
+            for predicted_span in predicted_span_to_entities.keys()
+            - reference_span_to_entities.keys()
+        )
+    )
+    false_negative_entities = set(
+        chain.from_iterable(
+            reference_span_to_entities[predicted_span]
+            for predicted_span in reference_span_to_entities.keys()
+            - predicted_span_to_entities.keys()
+        )
+    )
     return CorrectnessMatrix(
         true_positives=true_positive_entities,
         false_positives=false_positive_entities,
