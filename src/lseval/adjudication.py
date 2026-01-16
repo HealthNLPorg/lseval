@@ -35,7 +35,18 @@ def build_adjudication_file(
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     # You know what?  Handle the FN wrangling upstream too
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
-) -> dict:
+    filter_agreements: bool = True,
+) -> dict | None:
+    predictions = build_preannotations(
+        prediction_id=file_id + total_files,
+        reference_annotator=reference_annotator,
+        prediction_annotator=prediction_annotator,
+        entity_correctness_matrices=entity_correctness_matrices,
+        relation_correctness_matrices=relation_correctness_matrices,
+        filter_agreements=filter_agreements,
+    )
+    if filter_agreements and len(predictions) == 0:
+        return None
     return {
         "id": file_id,
         "data": {"text": file_text},
@@ -45,6 +56,7 @@ def build_adjudication_file(
             prediction_annotator=prediction_annotator,
             entity_correctness_matrices=entity_correctness_matrices,
             relation_correctness_matrices=relation_correctness_matrices,
+            filter_agreements=filter_agreements,
         ),
     }
 
@@ -55,6 +67,7 @@ def build_preannotations(
     prediction_annotator: str,
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
+    filter_agreements: bool = True,
 ) -> list[dict]:
     return [
         {
@@ -64,6 +77,7 @@ def build_preannotations(
                 prediction_annotator=prediction_annotator,
                 entity_correctness_matrices=entity_correctness_matrices,
                 relation_correctness_matrices=relation_correctness_matrices,
+                filter_agreements=filter_agreements,
             ),
         }
     ]
@@ -132,6 +146,7 @@ def insert_adjudication_data(
     prediction_annotator: str,
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
+    filter_agreements: bool = True,
 ) -> list[dict]:
     annotators = Enum(
         "Annotator",
@@ -146,10 +161,12 @@ def insert_adjudication_data(
             adjudicate_entities(
                 annotators,
                 entity_correctness_matrices,
+                filter_agreements,
             ),
             adjudicate_relations(
                 annotators,
                 relation_correctness_matrices,
+                filter_agreements,
             ),
         )
     )
@@ -188,11 +205,13 @@ def adjudicate_correctness_grouped_entities(
 def adjudicate_entities(
     annotators: EnumType,
     correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
+    filter_agreements: bool = True,
 ) -> Iterable[dict]:
     for correctness_matrix in correctness_matrices:
-        yield from adjudicate_correctness_grouped_entities(
-            cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
-        )
+        if not filter_agreements:
+            yield from adjudicate_correctness_grouped_entities(
+                cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+            )
         yield from adjudicate_correctness_grouped_entities(
             cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
         )
@@ -241,11 +260,13 @@ def adjudicate_correctness_grouped_relations(
 def adjudicate_relations(
     annotators: EnumType,
     correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
+    filter_agreements: bool = True,
 ) -> Iterable[dict]:
     for correctness_matrix in correctness_matrices:
-        yield from adjudicate_correctness_grouped_relations(
-            cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
-        )
+        if not filter_agreements:
+            yield from adjudicate_correctness_grouped_relations(
+                cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+            )
         yield from adjudicate_correctness_grouped_relations(
             cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
         )

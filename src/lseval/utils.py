@@ -61,15 +61,12 @@ def get_unique_label_studio_id(
 def parse_dtr(entity: dict) -> DocTimeRel:
     if entity.get("from_name") != "DocTimeRel":
         raise ValueError(f"Wrong entity type for parse_dtr: {entity['from_name']}")
-        return DocTimeRel.NA
     entity_value = entity.get("value")
     if entity_value is None:
         raise ValueError(f"Missing value field for DTR entity: {entity}")
-        return DocTimeRel.NA
     dtr_choices = entity_value.get("choices", [])
     if len(dtr_choices) != 1:
         raise ValueError(f"Invalid values for DTR choices: {dtr_choices}")
-        return DocTimeRel.NA
     # Don't worry there's a _missing_ method
     return DocTimeRel(dtr_choices[0])
 
