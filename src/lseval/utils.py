@@ -265,6 +265,7 @@ def parse_and_coordinate_relations(
 ) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
         label = annotation["labels"]
+        print(label)
         assert isinstance(label, list)
         label = tuple(label)
         return Relation(

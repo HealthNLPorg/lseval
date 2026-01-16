@@ -217,7 +217,7 @@ def adjudicate_correctness_grouped_relations(
             for relation_source in relation.source_annotations
         ]
         label_relations = [
-            entity for entity in source_relations if entity["type"] == "labels"
+            entity for entity in source_relations if entity["type"] == "relation"
         ]
         if len(label_relations) != 1:
             raise ValueError(
