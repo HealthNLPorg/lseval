@@ -85,7 +85,6 @@ class CorrectnessMatrix[T]:
     true_negatives: set[T] = field(default_factory=set)
     false_positives: set[T] = field(default_factory=set)
     false_negatives: set[T] = field(default_factory=set)
-    support: int = 0
 
     def get_correctness(self, datum: Any) -> Correctness:
         if self.is_true_positive(datum):
@@ -147,12 +146,7 @@ class CorrectnessMatrix[T]:
         )
 
     def get_support(self) -> int:
-        if self.support != len(self.true_positives) + len(self.false_negatives):
-            raise ValueError(
-                f"Supports should be {self.support}, actual total of true positives and false negatives is {len(self.true_positives) + len(self.false_negatives)}"
-            )
-            return -1
-        return self.support
+        return len(self.true_positives) + len(self.false_negatives)
 
     def to_correctness_totals(self) -> Mapping[Correctness, int]:
         return {

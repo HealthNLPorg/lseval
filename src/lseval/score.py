@@ -74,19 +74,18 @@ def overlap_entity_correctness_matrix(
     # relation.  I.e. is reflexive and symmetric but not transitive
     for span, entities in predicted_span_to_entities.items():
         if any(overlap_match(span, ref_span) for ref_span in sorted_reference_spans):
-            true_positive_entities.add(entities)
+            true_positive_entities.update(entities)
         else:
-            false_positive_entities.add(entities)
+            false_positive_entities.update(entities)
     for span, entities in reference_span_to_entities.items():
         if any(overlap_match(span, pred_span) for pred_span in sorted_predicted_spans):
             continue
-        false_negative_entities.add(entities)
+        false_negative_entities.update(entities)
 
     return CorrectnessMatrix(
         true_positives=true_positive_entities,
         false_positives=false_positive_entities,
         false_negatives=false_negative_entities,
-        support=len(reference_entities),
     )
 
 
@@ -119,22 +118,24 @@ def exact_entity_correctness_matrix(
                 entities[0].file_id,
                 str(span),
             )
-    true_positive_entities = {
-        predicted_span_to_entities[predicted_span]
-        for predicted_span in reference_span_to_entities.keys()
-        & predicted_span_to_entities.keys()
-    }
+    true_positive_entities = set(
+        chain.from_iterable(
+            predicted_span_to_entities.get(predicted_span, [])
+            for predicted_span in reference_span_to_entities.keys()
+            & predicted_span_to_entities.keys()
+        )
+    )
 
     false_positive_entities = set(
         chain.from_iterable(
-            predicted_span_to_entities[predicted_span]
+            predicted_span_to_entities.get(predicted_span, [])
             for predicted_span in predicted_span_to_entities.keys()
             - reference_span_to_entities.keys()
         )
     )
     false_negative_entities = set(
         chain.from_iterable(
-            reference_span_to_entities[predicted_span]
+            reference_span_to_entities.get(predicted_span, [])
             for predicted_span in reference_span_to_entities.keys()
             - predicted_span_to_entities.keys()
         )
@@ -143,7 +144,6 @@ def exact_entity_correctness_matrix(
         true_positives=true_positive_entities,
         false_positives=false_positive_entities,
         false_negatives=false_negative_entities,
-        support=len(reference_entities),
     )
 
 
@@ -172,7 +172,6 @@ def exact_relation_correctness_matrix(
         true_positives=predicted_set & reference_set,
         false_positives=predicted_set - reference_set,
         false_negatives=reference_set - predicted_set,
-        support=len(reference_relations),
     )
 
 
@@ -199,5 +198,4 @@ def overlap_relation_correctness_matrix(
         true_positives=true_positives,
         false_positives=false_positives,
         false_negatives=false_negatives,
-        support=len(reference_relations),
     )
