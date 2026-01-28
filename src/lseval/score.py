@@ -1,6 +1,7 @@
 import logging
 from collections import defaultdict
 from itertools import chain
+from operator import attrgetter
 
 from .correctness_matrix import CorrectnessMatrix
 from .datatypes import (
@@ -41,8 +42,8 @@ def overlap_entity_correctness_matrix(
     for span, entities in reference_span_to_entities.items():
         if len(entities) > 1:
             logger.warning(
-                "%d reference entities from %d share the span %s",
-                len(entities),
+                "%s reference entities from %d share the span %s",
+                ", ".join(sorted(map(attrgetter("label_studio_id"), entities))),
                 entities[0].file_id,
                 str(span),
             )
@@ -54,8 +55,8 @@ def overlap_entity_correctness_matrix(
     for span, entities in predicted_span_to_entities.items():
         if len(entities) > 1:
             logger.warning(
-                "%d predicted entities from %d share the span %s",
-                len(entities),
+                "%s predicted entities from %d share the span %s",
+                ", ".join(sorted(map(attrgetter("label_studio_id"), entities))),
                 entities[0].file_id,
                 str(span),
             )
@@ -100,8 +101,8 @@ def exact_entity_correctness_matrix(
     for span, entities in reference_span_to_entities.items():
         if len(entities) > 1:
             logger.warning(
-                "%d reference entities from %d share the span %s",
-                len(entities),
+                "%s reference entities from %d share the span %s",
+                ", ".join(sorted(map(attrgetter("label_studio_id"), entities))),
                 entities[0].file_id,
                 str(span),
             )
@@ -113,8 +114,8 @@ def exact_entity_correctness_matrix(
     for span, entities in predicted_span_to_entities.items():
         if len(entities) > 1:
             logger.warning(
-                "%d predicted entities from %d share the span %s",
-                len(entities),
+                "%s predicted entities from %d share the span %s",
+                ", ".join(sorted(map(attrgetter("label_studio_id"), entities))),
                 entities[0].file_id,
                 str(span),
             )

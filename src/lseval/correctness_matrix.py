@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
 from functools import lru_cache
@@ -105,6 +105,12 @@ class CorrectnessMatrix[T]:
             or self.is_false_positive(datum)
             or self.is_false_negative(datum)
         )
+
+    def __iter__(self) -> Iterable[T]:
+        yield from self.true_positives
+        yield from self.true_negatives
+        yield from self.false_positives
+        yield from self.false_negatives
 
     def is_true_positive(self, datum: Any) -> bool:
         return datum in self.true_positives
