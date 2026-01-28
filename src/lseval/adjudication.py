@@ -1,9 +1,9 @@
 import json
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from enum import Enum, EnumType
 from itertools import chain, groupby
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 from typing import cast
 
 from lseval.correctness_matrix import Correctness, CorrectnessMatrix
@@ -147,7 +147,7 @@ def insert_adjudication_data(
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
     filter_agreements: bool = True,
-) -> list[dict]:
+) -> Sequence[dict]:
     annotators = Enum(
         "Annotator",
         [
@@ -156,17 +156,24 @@ def insert_adjudication_data(
             ("Agreement", "Agreement"),
         ],
     )
+    adjudicated_relations = list(
+        adjudicate_relations(
+            annotators,
+            relation_correctness_matrices,
+            filter_agreements,
+        )
+    )
+    argument_entity_ids = set(
+        chain.from_iterable(map(itemgetter("from_id", "to_id"), adjudicated_relations))
+    )
     result = list(
         chain(
+            adjudicated_relations,
             adjudicate_entities(
-                annotators,
-                entity_correctness_matrices,
-                filter_agreements,
-            ),
-            adjudicate_relations(
-                annotators,
-                relation_correctness_matrices,
-                filter_agreements,
+                annotators=annotators,
+                correctness_matrices=entity_correctness_matrices,
+                argument_entity_ids=argument_entity_ids,
+                filter_agreements=filter_agreements,
             ),
         )
     )
@@ -205,12 +212,24 @@ def adjudicate_correctness_grouped_entities(
 def adjudicate_entities(
     annotators: EnumType,
     correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
+    argument_entity_ids: Collection[str],
     filter_agreements: bool = True,
 ) -> Iterable[dict]:
+    def is_argument_of_adjudicated_relation(entity: Entity) -> bool:
+        return entity.label_studio_id in argument_entity_ids
+
     for correctness_matrix in correctness_matrices:
         if not filter_agreements:
             yield from adjudicate_correctness_grouped_entities(
                 cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+            )
+        elif len(argument_entity_ids) > 0:
+            yield from adjudicate_correctness_grouped_entities(
+                cast(Enum, annotators("Agreement")),
+                filter(
+                    is_argument_of_adjudicated_relation,
+                    correctness_matrix.true_positives,
+                ),
             )
         yield from adjudicate_correctness_grouped_entities(
             cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
