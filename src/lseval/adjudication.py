@@ -108,25 +108,15 @@ def labels_entity_to_adjudication_entity(
     }
 
 
-def labels_relation_to_json_adjudication_relation(
-    annotator: Enum, labels_relation: dict
+def labels_relation_to_json_relation(
+    from_id: str, to_id: str, direction: str, labels: list[str]
 ) -> dict:
     return {
-        "from_id": labels_relation["from_id"],
-        "to_id": labels_relation["to_id"],
+        "from_id": from_id,
+        "to_id": to_id,
         "type": "relation",
-        "direction": labels_relation["direction"],
-        "labels": [annotator.name],
-    }
-
-
-def labels_relation_to_json_relation(labels_relation: dict) -> dict:
-    return {
-        "from_id": labels_relation["from_id"],
-        "to_id": labels_relation["to_id"],
-        "type": "relation",
-        "direction": labels_relation["direction"],
-        "labels": labels_relation["labels"],
+        "direction": direction,
+        "labels": labels,
     }
 
 
@@ -250,6 +240,8 @@ def adjudicate_correctness_grouped_relations(
         sorted(relation_group, key=get_relation_arg_ids),
         key=get_relation_arg_ids,
     ):
+        # Using recoordinated IDs since those had to be adjusted
+        # from scoring overlaps etc.
         from_id, to_id = id_directions
         relations = list(id_directions_group)
         if len(relations) != 1:
@@ -270,10 +262,18 @@ def adjudicate_correctness_grouped_relations(
                 f"Wrong number of label relations in source annotations {len(label_relations)}"
             )
             return []
-        yield labels_relation_to_json_adjudication_relation(
-            annotator, label_relations[0]
+        yield labels_relation_to_json_relation(
+            from_id=from_id,
+            to_id=to_id,
+            direction=label_relations[0]["direction"],
+            labels=[annotator.name],
         )
-        yield labels_relation_to_json_relation(label_relations[0])
+        yield labels_relation_to_json_relation(
+            from_id=from_id,
+            to_id=to_id,
+            direction=label_relations[0]["direction"],
+            labels=label_relations[0]["labels"],
+        )
 
 
 def adjudicate_relations(
