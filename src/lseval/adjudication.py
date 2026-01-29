@@ -15,8 +15,7 @@ def update_schema(
     reference_annotator: str,
     prediction_annotator: str,
 ) -> ET.ElementTree | None:
-    raise NotImplementedError("Figure this out")
-    return None
+    raise NotImplementedError("TBD")
 
 
 def relation_is_linked(entities: set[Entity], relation: Relation) -> bool:
@@ -68,17 +67,20 @@ def build_preannotations(
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
     filter_agreements: bool = True,
-) -> list[dict]:
+) -> Sequence[dict]:
+    result = insert_adjudication_data(
+        reference_annotator=reference_annotator,
+        prediction_annotator=prediction_annotator,
+        entity_correctness_matrices=entity_correctness_matrices,
+        relation_correctness_matrices=relation_correctness_matrices,
+        filter_agreements=filter_agreements,
+    )
+    if filter_agreements and len(result) == 0:
+        return []
     return [
         {
             "id": prediction_id,
-            "result": insert_adjudication_data(
-                reference_annotator=reference_annotator,
-                prediction_annotator=prediction_annotator,
-                entity_correctness_matrices=entity_correctness_matrices,
-                relation_correctness_matrices=relation_correctness_matrices,
-                filter_agreements=filter_agreements,
-            ),
+            "result": result,
         }
     ]
 
