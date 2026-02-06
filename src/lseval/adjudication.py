@@ -6,7 +6,7 @@ from itertools import chain
 from operator import attrgetter, itemgetter
 from typing import cast
 
-from more_itertools import bucket
+from more_itertools import map_reduce
 
 from lseval.correctness_matrix import Correctness, CorrectnessMatrix
 from lseval.datatypes import Entity, Relation
@@ -177,9 +177,9 @@ def insert_adjudication_data(
 def adjudicate_correctness_grouped_entities(
     annotator: Enum, entity_group: Iterable[Entity]
 ) -> Iterable[dict]:
-    label_studio_id_buckets = bucket(entity_group, key=attrgetter("label_studio_id"))
-    for label_studio_id in label_studio_id_buckets:
-        entities = list(label_studio_id_buckets[label_studio_id])
+    for entities in map_reduce(
+        entity_group, keyfunc=attrgetter("label_studio_id")
+    ).values():
         if len(entities) != 1:
             raise ValueError(f"Wrong number of entities {len(entities)}")
         entity = entities[0]
@@ -236,13 +236,12 @@ def get_relation_arg_ids(relation: Relation) -> tuple[str, str]:
 def adjudicate_correctness_grouped_relations(
     annotator: Enum, relation_group: Iterable[Relation]
 ) -> Iterable[dict]:
-    id_directions_buckets = bucket(relation_group, key=get_relation_arg_ids)
-    for id_directions in id_directions_buckets:
-        id_directions_group = id_directions_buckets[id_directions]
+    for id_directions, relations in map_reduce(
+        relation_group, keyfunc=get_relation_arg_ids
+    ).items():
         # Using recoordinated IDs since those had to be adjusted
         # from scoring overlaps etc.
         from_id, to_id = id_directions
-        relations = list(id_directions_group)
         if len(relations) != 1:
             raise ValueError(
                 f"Wrong number of relations from {from_id} to {to_id: {len(relations)}}"

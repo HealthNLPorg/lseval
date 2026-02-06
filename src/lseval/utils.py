@@ -3,10 +3,11 @@ import logging
 import operator
 from collections import defaultdict, deque
 from collections.abc import Container, Iterable, Mapping, Sequence
+from functools import partial
 from operator import itemgetter
 from typing import cast
 
-from more_itertools import bucket, partition
+from more_itertools import all_equal, map_reduce, partition
 
 from .datatypes import (
     AnnotatedFile,
@@ -155,15 +156,16 @@ def organize_entities_by_ann_id(
             raise ValueError(f"Entity: {entity_annotation} is missing id")
         return cast(str, annotation_id)
 
-    annotation_id_to_entity = {}
-    annotation_id_buckets = bucket(entity_annotations, key=get_annotation_id)
-    for annotation_id in annotation_id_buckets:
-        entities = list(annotation_id_buckets[annotation_id])
-
-        single_entity = coordinate_attribute_entities_to_single(file_id, entities)
-        if single_entity is not None:
-            annotation_id_to_entity[annotation_id] = single_entity
-    return annotation_id_to_entity
+    coordindate_to_single = partial(coordinate_attribute_entities_to_single, file_id)
+    return {
+        annotation_id: entity
+        for annotation_id, entity in map_reduce(
+            entity_annotations,
+            keyfunc=get_annotation_id,
+            reducefunc=coordindate_to_single,
+        ).items()
+        if entity is not None
+    }
 
 
 def get_indices(entity: dict) -> tuple[int, int]:
@@ -191,27 +193,23 @@ def parse_event_type(entity: dict) -> str | None:
 def coordinate_attribute_entities_to_single(
     file_id: int, entities: Sequence[dict], attributes: Container[str] = CORE_ATTRIBUTES
 ) -> Entity | None:
-    entity_attribute_to_instances = {}
-
-    def relevant_attribute(attribute: str) -> bool:
-        return attribute in attributes
-
-    attribute_buckets = bucket(
-        entities, key=itemgetter("from_name"), validator=relevant_attribute
-    )
-    for attribute in attribute_buckets:
-        attribute_entities = list(attribute_buckets[attribute])
-        if len(attribute_entities) > 1:
+    def get_first(entities: Sequence[dict]) -> dict:
+        if len(entities) > 1:
             logger.error(
-                "%s has more than one entry for a particular entity %s",
-                attribute,
-                attribute_entities,
+                "%d entities with id %s sharing type %s",
+                len(entities),
+                entities[0]["id"],
+                entities[0]["from_name"],
             )
-        entity_attribute_to_instances[attribute] = attribute_entities[0]
+        return entities[0]
 
-    first_inds = get_indices(entities[0])
+    entity_attribute_to_instances = map_reduce(
+        (entity for entity in entities if entity["from_name"] in attributes),
+        keyfunc=itemgetter("from_name"),
+        reducefunc=get_first,
+    )
 
-    if not all(get_indices(entity) == first_inds for entity in entities[1:]):
+    if not all_equal(map(get_indices, entities)):
         raise ValueError(f"Entities not matching on indices {entities}")
 
     raw_event = entity_attribute_to_instances.get("Event")
@@ -220,7 +218,7 @@ def coordinate_attribute_entities_to_single(
     return Entity(
         file_id=file_id,
         label_studio_id=entities[0]["id"],
-        span=first_inds,
+        span=get_indices(entity=entities[0]),
         text=parse_text(raw_event) if raw_event is not None else None,
         dtr=parse_dtr(raw_dtr) if raw_dtr is not None else None,
         label=parse_event_type(raw_event) if raw_event is not None else None,
