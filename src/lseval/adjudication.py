@@ -131,7 +131,6 @@ def get_correctness[T](
     correctness_matrix = t_to_typed_correctness_matrix.get(t)
     if correctness_matrix is None:
         raise ValueError("All entities should be accounted for")
-        return Correctness.NA
     return correctness_matrix.get_correctness(t)
 
 
