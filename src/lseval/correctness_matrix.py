@@ -1,11 +1,11 @@
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
-from functools import lru_cache
+from functools import cache
 from typing import Any
 
 
-@lru_cache
+@cache
 def precision(
     true_positives: int,
     true_negatives: int,
@@ -18,7 +18,7 @@ def precision(
     return true_positives / denominator
 
 
-@lru_cache
+@cache
 def recall(
     true_positives: int,
     true_negatives: int,
@@ -31,7 +31,7 @@ def recall(
     return true_positives / denominator
 
 
-@lru_cache
+@cache
 def f_beta(precision: float, recall: float, beta: float) -> float:
     beta_squared = pow(beta, 2.0)
     denominator = (beta_squared * precision) + recall
@@ -40,7 +40,7 @@ def f_beta(precision: float, recall: float, beta: float) -> float:
     return ((1 + beta_squared) * precision * recall) / denominator
 
 
-@lru_cache
+@cache
 def f1(precision: float, recall: float) -> float:
     return f_beta(precision, recall, beta=1.0)
 
@@ -80,11 +80,11 @@ def score_totals(
 
 
 @dataclass
-class CorrectnessMatrix[T]:
-    true_positives: set[T] = field(default_factory=set)
-    true_negatives: set[T] = field(default_factory=set)
-    false_positives: set[T] = field(default_factory=set)
-    false_negatives: set[T] = field(default_factory=set)
+class CorrectnessMatrix[T](Collection[T]):
+    true_positives: Collection[T] = field(default_factory=set)
+    true_negatives: Collection[T] = field(default_factory=set)
+    false_positives: Collection[T] = field(default_factory=set)
+    false_negatives: Collection[T] = field(default_factory=set)
 
     def get_correctness(self, datum: Any) -> Correctness:
         if self.is_true_positive(datum):
@@ -97,20 +97,6 @@ class CorrectnessMatrix[T]:
             return Correctness.FALSE_NEGATIVE
         else:
             return Correctness.NA
-
-    def __contains__(self, datum: Any) -> bool:
-        return (
-            self.is_true_positive(datum)
-            or self.is_true_negative(datum)
-            or self.is_false_positive(datum)
-            or self.is_false_negative(datum)
-        )
-
-    def __iter__(self) -> Iterable[T]:
-        yield from self.true_positives
-        yield from self.true_negatives
-        yield from self.false_positives
-        yield from self.false_negatives
 
     def is_true_positive(self, datum: Any) -> bool:
         return datum in self.true_positives
@@ -169,3 +155,17 @@ class CorrectnessMatrix[T]:
             + len(self.true_negatives)
             + len(self.true_positives)
         )
+
+    def __contains__(self, datum: Any) -> bool:
+        return (
+            self.is_true_positive(datum)
+            or self.is_true_negative(datum)
+            or self.is_false_positive(datum)
+            or self.is_false_negative(datum)
+        )
+
+    def __iter__(self) -> Iterator[T]:
+        yield from self.true_positives
+        yield from self.true_negatives
+        yield from self.false_positives
+        yield from self.false_negatives

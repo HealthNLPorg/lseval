@@ -1,13 +1,12 @@
 import json
 import logging
-import random
+import operator
 from collections import defaultdict, deque
-from collections.abc import Iterable, Mapping
-from itertools import groupby
+from collections.abc import Container, Iterable, Mapping, Sequence
 from operator import itemgetter
 from typing import cast
 
-from more_itertools import partition
+from more_itertools import bucket, partition
 
 from .datatypes import (
     AnnotatedFile,
@@ -27,35 +26,6 @@ logging.basicConfig(
 
 
 CORE_ATTRIBUTES = {"DocTimeRel", "CUI", "Event"}
-
-LS_SALT_STRING_ALPHABET = (
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"
-)
-LS_SALT_STRING_LENGTH = 10
-
-
-def get_salt_string(alphabet: str, length: int) -> str:
-    return "".join(random.choices(population=alphabet, k=length))
-
-
-def get_label_studio_id() -> str:
-    return get_salt_string(
-        alphabet=LS_SALT_STRING_ALPHABET, length=LS_SALT_STRING_LENGTH
-    )
-
-
-def get_unique_label_studio_id(
-    used_ids: set[str], tries: int = 10
-) -> tuple[str, set[str]]:
-    for try_count in range(tries):
-        label_studio_id = get_label_studio_id()
-        if label_studio_id not in used_ids:
-            used_ids.add(label_studio_id)
-            return label_studio_id, used_ids
-    raise ValueError(
-        f"Could not create a unique label string against {len(used_ids)} with {tries} tries"
-    )
-    return "_INVALID_LABEL_STUDIO_ID_", used_ids
 
 
 def parse_dtr(entity: dict) -> DocTimeRel:
@@ -79,32 +49,37 @@ def parse_cuis(entity: dict) -> tuple[str, ...]:
         raise ValueError(f"Missing value field for CUIS entity: {entity}")
     return tuple(
         sorted(
-            map(str.upper, map(str.strip, filter(None, entity_value.get("text", []))))
+            map(
+                str.upper,
+                map(
+                    str.strip,
+                    filter(operator.is_not_none, entity_value.get("text", [])),
+                ),
+            )
         )
     )
 
 
 def parse_text(entity: dict) -> str | None:
     if entity.get("from_name") != "DocTimeRel" and entity.get("from_name") != "Event":
-        raise ValueError(f"Wrong entity type for parse_text: {entity['from_name']}")
-        return None
+        entity_space = entity["from_name"]
+        raise ValueError(f"Wrong entity type for parse_text: {entity_space}")
     entity_value = entity.get("value")
     if entity_value is None:
         raise ValueError(f"Missing value field for DTR/Event entity: {entity}")
-        return None
     return entity_value.get("text", [])
 
 
 def organize_corpus_annotations_by_annotator[T](
     raw_json_corpus: Iterable[dict],
     id_to_unique_annotator: Mapping[int, T],
-    annotator_ids_to_ignore: list[int],
-) -> dict[T, SingleAnnotatorCorpus]:
-    annotator_to_files = defaultdict(lambda: deque())
-    for raw_json_file in raw_json_corpus:
-        raw_file_dictionary = organize_file_by_annotator_id(raw_json_file)
+    annotator_ids_to_ignore: Sequence[int],
+) -> Mapping[T, SingleAnnotatorCorpus]:
+    annotator_to_files = defaultdict(deque)
+    for raw_file_dictionary in raw_json_corpus:
+        annotator_id_to_file = organize_file_by_annotator_id(raw_file_dictionary)
         annotator_merged_file_dictionary = organize_file_annotations_by_annotator(
-            raw_file_dictionary, id_to_unique_annotator, annotator_ids_to_ignore
+            annotator_id_to_file, id_to_unique_annotator, annotator_ids_to_ignore
         )
         for annotator, annotated_file in annotator_merged_file_dictionary.items():
             annotator_to_files[annotator].append(annotated_file)
@@ -115,12 +90,12 @@ def organize_corpus_annotations_by_annotator[T](
 
 
 def organize_file_annotations_by_annotator[T](
-    raw_file_dictionary: dict,
+    annotator_id_to_file: Mapping[int, AnnotatedFile],
     id_to_unique_annotator: Mapping[int, T],
-    annotator_ids_to_ignore: list[int],
-) -> dict[T, AnnotatedFile]:
-    annotator_to_annotated_files = defaultdict(lambda: deque())
-    for annotator_id, annotated_file in raw_file_dictionary.items():
+    annotator_ids_to_ignore: Container[int],
+) -> Mapping[T, AnnotatedFile]:
+    annotator_to_annotated_files = defaultdict(deque)
+    for annotator_id, annotated_file in annotator_id_to_file.items():
         if annotator_id not in annotator_ids_to_ignore:
             annotator_to_annotated_files[id_to_unique_annotator[annotator_id]].append(
                 annotated_file
@@ -137,7 +112,7 @@ def organize_file_annotations_by_annotator[T](
 
 def organize_file_by_annotator_id(
     raw_file_dictionary: dict,
-) -> dict[int, AnnotatedFile]:
+) -> Mapping[int, AnnotatedFile]:
     file_id = int(raw_file_dictionary["id"])
     id_annotations_ls = raw_file_dictionary["annotations"]
 
@@ -150,7 +125,7 @@ def organize_file_by_annotator_id(
 
 
 def id_annotations_to_file(
-    file_id: int, id_annotations: list[dict], file_text: str
+    file_id: int, id_annotations: Iterable[dict], file_text: str
 ) -> AnnotatedFile:
     def is_relation(annotation: dict) -> bool:
         return annotation["type"] == "relation"
@@ -181,10 +156,9 @@ def organize_entities_by_ann_id(
         return cast(str, annotation_id)
 
     annotation_id_to_entity = {}
-    for annotation_id, entity_iter in groupby(
-        entity_annotations, key=get_annotation_id
-    ):
-        entities = list(entity_iter)
+    annotation_id_buckets = bucket(entity_annotations, key=get_annotation_id)
+    for annotation_id in annotation_id_buckets:
+        entities = list(annotation_id_buckets[annotation_id])
 
         single_entity = coordinate_attribute_entities_to_single(file_id, entities)
         if single_entity is not None:
@@ -196,51 +170,49 @@ def get_indices(entity: dict) -> tuple[int, int]:
     e_value = entity.get("value")
     if e_value is None:
         raise ValueError(f"Entity missing value field {entity}")
-        return -1, -1
     else:
         return e_value["start"], e_value["end"]
 
 
 def parse_event_type(entity: dict) -> str | None:
     if entity.get("from_name") != "Event":
-        raise ValueError(
-            f"Wrong entity type for parse_event_type: {entity['from_name']}"
-        )
-        return None
+        entity_space = entity["from_name"]
+        raise ValueError(f"Wrong entity type for parse_event_type: {entity_space}")
     entity_value = entity.get("value")
     if entity_value is None:
         raise ValueError(f"Missing value field for event type entity: {entity}")
-        return None
     event_type_labels = entity_value.get("labels", [])
     if len(event_type_labels) != 1:
         raise ValueError(f"Invalid values for event type labels: {event_type_labels}")
-        return None
     # Don't worry there's a _missing_ method
     return str(event_type_labels[0])
 
 
 def coordinate_attribute_entities_to_single(
-    file_id: int, entities: list[dict], attributes: set[str] = CORE_ATTRIBUTES
+    file_id: int, entities: Sequence[dict], attributes: Container[str] = CORE_ATTRIBUTES
 ) -> Entity | None:
     entity_attribute_to_instances = {}
-    for attribute_type, entity_iter in groupby(
-        sorted(entities, key=itemgetter("from_name")), key=itemgetter("from_name")
-    ):
-        if attribute_type in attributes:
-            attribute_entities = list(entity_iter)
-            if len(attribute_entities) > 1:
-                logger.error(
-                    "%s has more than one entry for a particular entity %s",
-                    attribute_type,
-                    attribute_entities,
-                )
-            entity_attribute_to_instances[attribute_type] = attribute_entities[0]
+
+    def relevant_attribute(attribute: str) -> bool:
+        return attribute in attributes
+
+    attribute_buckets = bucket(
+        entities, key=itemgetter("from_name"), validator=relevant_attribute
+    )
+    for attribute in attribute_buckets:
+        attribute_entities = list(attribute_buckets[attribute])
+        if len(attribute_entities) > 1:
+            logger.error(
+                "%s has more than one entry for a particular entity %s",
+                attribute,
+                attribute_entities,
+            )
+        entity_attribute_to_instances[attribute] = attribute_entities[0]
 
     first_inds = get_indices(entities[0])
 
     if not all(get_indices(entity) == first_inds for entity in entities[1:]):
         raise ValueError(f"Entities not matching on indices {entities}")
-        return None
 
     raw_event = entity_attribute_to_instances.get("Event")
     raw_dtr = entity_attribute_to_instances.get("DocTimeRel")
@@ -264,7 +236,6 @@ def parse_and_coordinate_relations(
 ) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
         label = annotation["labels"]
-        print(label)
         assert isinstance(label, list)
         label = tuple(label)
         return Relation(

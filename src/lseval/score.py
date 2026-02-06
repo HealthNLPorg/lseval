@@ -1,5 +1,6 @@
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
+from collections.abc import Collection, Set
 from itertools import chain
 from operator import attrgetter
 
@@ -25,7 +26,9 @@ logging.basicConfig(
 # would let us filter on the subtypes but still
 # think that's easier to keep outside the library
 def build_entity_correctness_matrix(
-    predicted_entities: set[Entity], reference_entities: set[Entity], overlap: bool
+    predicted_entities: Collection[Entity],
+    reference_entities: Collection[Entity],
+    overlap: bool,
 ) -> CorrectnessMatrix:
     if overlap:
         return overlap_entity_correctness_matrix(predicted_entities, reference_entities)
@@ -33,9 +36,9 @@ def build_entity_correctness_matrix(
 
 
 def overlap_entity_correctness_matrix(
-    predicted_entities: set[Entity], reference_entities: set[Entity]
+    predicted_entities: Collection[Entity], reference_entities: Collection[Entity]
 ) -> CorrectnessMatrix:
-    reference_span_to_entities = defaultdict(list)
+    reference_span_to_entities = defaultdict(deque)
     for entity in reference_entities:
         reference_span_to_entities[entity.span].append(entity)
 
@@ -48,7 +51,7 @@ def overlap_entity_correctness_matrix(
                 str(span),
             )
 
-    predicted_span_to_entities = defaultdict(list)
+    predicted_span_to_entities = defaultdict(deque)
     for entity in predicted_entities:
         predicted_span_to_entities[entity.span].append(entity)
 
@@ -91,7 +94,7 @@ def overlap_entity_correctness_matrix(
 
 
 def exact_entity_correctness_matrix(
-    predicted_entities: set[Entity], reference_entities: set[Entity]
+    predicted_entities: Collection[Entity], reference_entities: Collection[Entity]
 ) -> CorrectnessMatrix:
     # want to keep this span level due to the extension logic, can re-work it later
     reference_span_to_entities = defaultdict(list)
@@ -151,8 +154,8 @@ def exact_entity_correctness_matrix(
 # Whether or not "None"s are considered
 # is left up to the user
 def build_relation_correctness_matrix(
-    predicted_relations: list[Relation],
-    reference_relations: list[Relation],
+    predicted_relations: Set[Relation],
+    reference_relations: Set[Relation],
     overlap: bool,
 ) -> CorrectnessMatrix:
     if not overlap:
@@ -163,21 +166,17 @@ def build_relation_correctness_matrix(
 
 
 def exact_relation_correctness_matrix(
-    predicted_relations: list[Relation], reference_relations: list[Relation]
+    predicted_relations: Set[Relation], reference_relations: Set[Relation]
 ) -> CorrectnessMatrix:
-    predicted_set = set(predicted_relations)
-    assert len(predicted_set) == len(predicted_relations)
-    reference_set = set(reference_relations)
-    assert len(reference_set) == len(reference_relations)
     return CorrectnessMatrix(
-        true_positives=predicted_set & reference_set,
-        false_positives=predicted_set - reference_set,
-        false_negatives=reference_set - predicted_set,
+        true_positives=predicted_relations & reference_relations,
+        false_positives=predicted_relations - reference_relations,
+        false_negatives=reference_relations - predicted_relations,
     )
 
 
 def overlap_relation_correctness_matrix(
-    predicted_relations: list[Relation], reference_relations: list[Relation]
+    predicted_relations: Collection[Relation], reference_relations: Collection[Relation]
 ) -> CorrectnessMatrix:
     true_positives = set()
     false_positives = set()

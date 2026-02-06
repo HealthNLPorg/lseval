@@ -2,9 +2,11 @@ import json
 import xml.etree.ElementTree as ET
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from enum import Enum, EnumType
-from itertools import chain, groupby
+from itertools import chain
 from operator import attrgetter, itemgetter
 from typing import cast
+
+from more_itertools import bucket
 
 from lseval.correctness_matrix import Correctness, CorrectnessMatrix
 from lseval.datatypes import Entity, Relation
@@ -175,15 +177,12 @@ def insert_adjudication_data(
 def adjudicate_correctness_grouped_entities(
     annotator: Enum, entity_group: Iterable[Entity]
 ) -> Iterable[dict]:
-    for _, annotation_id_group in groupby(
-        sorted(entity_group, key=attrgetter("label_studio_id")),
-        key=attrgetter("label_studio_id"),
-    ):
-        entities = list(annotation_id_group)
+    label_studio_id_buckets = bucket(entity_group, key=attrgetter("label_studio_id"))
+    for label_studio_id in label_studio_id_buckets:
+        entities = list(label_studio_id_buckets[label_studio_id])
         if len(entities) != 1:
             raise ValueError(f"Wrong number of entities {len(entities)}")
-            return []
-        entity = cast(Entity, entities[0])
+        entity = entities[0]
         source_entities = [
             json.loads(entity_source) for entity_source in entity.source_annotations
         ]
@@ -194,7 +193,6 @@ def adjudicate_correctness_grouped_entities(
             raise ValueError(
                 f"Wrong number of label entities in source annotations {len(label_entities)}"
             )
-            return []
         yield labels_entity_to_adjudication_entity(annotator, label_entities[0])
         for entity in source_entities:
             entity["origin"] = "prediction"
@@ -238,10 +236,9 @@ def get_relation_arg_ids(relation: Relation) -> tuple[str, str]:
 def adjudicate_correctness_grouped_relations(
     annotator: Enum, relation_group: Iterable[Relation]
 ) -> Iterable[dict]:
-    for id_directions, id_directions_group in groupby(
-        sorted(relation_group, key=get_relation_arg_ids),
-        key=get_relation_arg_ids,
-    ):
+    id_directions_buckets = bucket(relation_group, key=get_relation_arg_ids)
+    for id_directions in id_directions_buckets:
+        id_directions_group = id_directions_buckets[id_directions]
         # Using recoordinated IDs since those had to be adjusted
         # from scoring overlaps etc.
         from_id, to_id = id_directions
@@ -251,7 +248,7 @@ def adjudicate_correctness_grouped_relations(
                 f"Wrong number of relations from {from_id} to {to_id: {len(relations)}}"
             )
             return []
-        relation = cast(Relation, relations[0])
+        relation = relations[0]
         source_relations = [
             json.loads(relation_source)
             for relation_source in relation.source_annotations
@@ -263,7 +260,6 @@ def adjudicate_correctness_grouped_relations(
             raise ValueError(
                 f"Wrong number of label relations in source annotations {len(label_relations)}"
             )
-            return []
         yield labels_relation_to_json_relation(
             from_id=from_id,
             to_id=to_id,

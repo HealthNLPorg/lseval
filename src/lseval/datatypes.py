@@ -23,25 +23,25 @@ def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> boo
     return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
 
 
-def admits_bijection(preimage: Iterable[Any], image: Iterable[Any]) -> bool:
+def admits_bijection[T](preimage: Iterable[T], image: Iterable[T]) -> bool:
     # reduced function is a permutation but allows for repeats
     return sorted(Counter(preimage).values()) == sorted(Counter(image).values())
 
 
-def get_nth(mapping: Iterable[tuple[Any, ...]], n: int) -> Iterable[Any]:
+def get_nth[T](mapping: Iterable[tuple[T, ...]], n: int) -> Iterable[T]:
     return map(itemgetter(n), mapping)
 
 
-def get_preimage(mapping: Iterable[tuple[Any, Any]]) -> Iterable[Any]:
+def get_preimage[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
     return get_nth(mapping, n=0)
 
 
-def get_image(mapping: Iterable[tuple[Any, Any]]) -> Iterable[Any]:
+def get_image[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
     return get_nth(mapping, n=1)
 
 
 def overlap_exists(
-    first_spans: set[tuple[int, int]], second_spans: set[tuple[int, int]]
+    first_spans: Iterable[tuple[int, int]], second_spans: Iterable[tuple[int, int]]
 ) -> bool:
     for mapping in combinations(product(first_spans, second_spans), r=2):
         # Don't need to worry about iterator exhaustion
@@ -96,7 +96,7 @@ class Relation:
     # of its arguments, part of the motiviation
     # for this is conceptual difficulty of scoring
     # if it's not type agnostic
-    def __eq__(self, other: Any):
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Relation):
             return False
         if self.directed and other.directed:
