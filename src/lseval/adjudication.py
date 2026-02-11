@@ -245,7 +245,6 @@ def adjudicate_correctness_grouped_relations(
             raise ValueError(
                 f"Wrong number of relations from {from_id} to {to_id}: {len(relations)}"
             )
-            return []
         relation = relations[0]
         source_relations = [
             json.loads(relation_source)
