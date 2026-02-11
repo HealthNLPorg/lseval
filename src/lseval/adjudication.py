@@ -243,7 +243,7 @@ def adjudicate_correctness_grouped_relations(
         from_id, to_id = id_directions
         if len(relations) != 1:
             raise ValueError(
-                f"Wrong number of relations from {from_id} to {to_id: {len(relations)}}"
+                f"Wrong number of relations from {from_id} to {to_id}: {len(relations)}"
             )
             return []
         relation = relations[0]
