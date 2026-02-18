@@ -7,7 +7,6 @@ from enum import Enum, EnumType
 from functools import partial
 from itertools import chain
 from operator import attrgetter, itemgetter
-from typing import cast
 
 from more_itertools import all_equal, flatten, map_reduce, one, partition
 
@@ -174,7 +173,7 @@ def insert_adjudication_data(
         )
     )
     argument_entity_ids = set(
-        chain.from_iterable(map(itemgetter("from_id", "to_id"), adjudicated_relations))
+        flatten(map(itemgetter("from_id", "to_id"), adjudicated_relations))
     )
     result = list(
         chain(
@@ -190,29 +189,41 @@ def insert_adjudication_data(
     return result
 
 
+def adjudicate_single_id_entity_group[T](
+    entities: Sequence[Entity], annotator_value: T
+) -> Iterable[dict]:
+    if len(entities) != 1:
+        raise ValueError(f"Wrong number of entities {len(entities)}")
+    entity = entities[0]
+    source_entities = [
+        json.loads(entity_source) for entity_source in entity.source_annotations
+    ]
+    label_entities = [
+        entity for entity in source_entities if entity["type"] == "labels"
+    ]
+    if len(label_entities) != 1:
+        raise ValueError(
+            f"Wrong number of label entities in source annotations {len(label_entities)}"
+        )
+    yield labels_entity_to_adjudication_entity(annotator_value, label_entities[0])
+    for entity in source_entities:
+        entity["origin"] = "prediction"
+        yield entity
+
+
 def adjudicate_correctness_grouped_entities[T](
     annotator_value: T, entity_group: Iterable[Entity]
 ) -> Iterable[dict]:
-    for entities in map_reduce(
-        entity_group, keyfunc=attrgetter("label_studio_id")
-    ).values():
-        if len(entities) != 1:
-            raise ValueError(f"Wrong number of entities {len(entities)}")
-        entity = entities[0]
-        source_entities = [
-            json.loads(entity_source) for entity_source in entity.source_annotations
-        ]
-        label_entities = [
-            entity for entity in source_entities if entity["type"] == "labels"
-        ]
-        if len(label_entities) != 1:
-            raise ValueError(
-                f"Wrong number of label entities in source annotations {len(label_entities)}"
-            )
-        yield labels_entity_to_adjudication_entity(annotator_value, label_entities[0])
-        for entity in source_entities:
-            entity["origin"] = "prediction"
-            yield entity
+    local_adjudicate_single_id = partial(
+        adjudicate_single_id_entity_group, annotator_value=annotator_value
+    )
+    return flatten(
+        map_reduce(
+            entity_group,
+            keyfunc=attrgetter("label_studio_id"),
+            reducefunc=local_adjudicate_single_id,
+        ).values()
+    )
 
 
 def adjudicate_entities(
@@ -296,12 +307,13 @@ def adjudicate_id_entity_cluster[T](
             )
         case 1:
             # Haven't seen any inconsistencies for singletons TODO yet...
-            return offsets_entity_cluster
+            yield from offsets_entity_cluster
+            return
         case _:
             # The hard part - this might be worth factoring out into another function
             annotator_values = list(map(annotators, iaa_entities))
             if all_equal(annotator_values):
-                scapegoat = one(iaa_entities)
+                scapegoat = iaa_entities[0]
                 scapegoat_id = scapegoat.get("id")
                 scapegoat_offsets = scapegoat.get("offsets")
                 raise ValueError(
@@ -321,19 +333,19 @@ def adjudicate_id_entity_cluster[T](
                     raise ValueError("Technically impossible")
                 case 1:
                     if len(non_agreement) > 1:
-                        scapegoat = one(iaa_entities)
+                        scapegoat = iaa_entities[0]
                         scapegoat_id = scapegoat.get("id")
                         scapegoat_offsets = scapegoat.get("offsets")
                         raise ValueError(
                             f"{len(non_agreement)} IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets}"
                         )
-                    yield one(iaa_entities)
+                    yield iaa_entities[0]
                 case 2:
                     yield wrangle_conflicts(iaa_entities)
                 case _:
                     raise ValueError(f"Erroneous annotator choices {out_of_scope}")
 
-    return normal_entity_iter
+    yield from normal_entity_iter
 
 
 def adjudicate_offset_entity_cluster(
@@ -457,11 +469,11 @@ def adjudicate_relations(
     for correctness_matrix in correctness_matrices:
         if not filter_agreements:
             yield from adjudicate_correctness_grouped_relations(
-                cast(Enum, annotators("Agreement")), correctness_matrix.true_positives
+                AnnotatorChoice.AGREEMENT, correctness_matrix.true_positives
             )
         yield from adjudicate_correctness_grouped_relations(
-            cast(Enum, annotators("Prediction")), correctness_matrix.false_positives
+            AnnotatorChoice.PREDICTION, correctness_matrix.false_positives
         )
         yield from adjudicate_correctness_grouped_relations(
-            cast(Enum, annotators("Reference")), correctness_matrix.false_negatives
+            AnnotatorChoice.REFERENCE, correctness_matrix.false_negatives
         )
