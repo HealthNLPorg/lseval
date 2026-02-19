@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from enum import Enum, EnumType, StrEnum
 from functools import partial
-from itertools import chain
+from itertools import chain, groupby
 from operator import attrgetter, itemgetter
 
 from more_itertools import all_equal, flatten, map_reduce, one, partition
@@ -87,7 +87,7 @@ def build_preannotations(
     relation_correctness_matrices: Iterable[CorrectnessMatrix[Relation]],
     filter_agreements: bool = True,
 ) -> Sequence[dict]:
-    result = insert_adjudication_data(
+    result = get_adjudication_data(
         reference_annotator=reference_annotator,
         prediction_annotator=prediction_annotator,
         entity_correctness_matrices=entity_correctness_matrices,
@@ -151,7 +151,7 @@ def get_correctness[T](
     return correctness_matrix.get_correctness(t)
 
 
-def insert_adjudication_data(
+def get_adjudication_data(
     reference_annotator: str,
     prediction_annotator: str,
     entity_correctness_matrices: Iterable[CorrectnessMatrix[Entity]],
@@ -166,6 +166,14 @@ def insert_adjudication_data(
             ("Agreement", AnnotatorChoice.AGREEMENT),
         ],
     )
+
+    def fix_annnotator_name(entity: dict) -> dict:
+        if entity["from_name"] == "IAA":
+            originals = entity["value"]["choices"]
+            entity["value"]["choices"] = [annotators(av.value).name for av in originals]
+            return entity
+        return entity
+
     adjudicated_relations = list(
         adjudicate_relations(
             annotators,
@@ -176,18 +184,46 @@ def insert_adjudication_data(
     argument_entity_ids = set(
         flatten(map(itemgetter("from_id", "to_id"), adjudicated_relations))
     )
-    result = list(
-        chain(
-            adjudicated_relations,
+    return order_adjudication_data(
+        entities=map(
+            fix_annnotator_name,
             adjudicate_entities(
-                annotators=annotators,
                 entity_correctness_matrices=entity_correctness_matrices,
                 argument_entity_ids=argument_entity_ids,
                 filter_agreements=filter_agreements,
             ),
-        )
+        ),
+        relations=adjudicated_relations,
     )
-    return result
+
+
+def order_adjudication_data(
+    entities: Iterable[dict],
+    relations: Iterable[dict],
+) -> Sequence[dict]:
+    def entity_sort(entity: dict) -> tuple[tuple[int, int], str]:
+        return entity_offsets(entity), entity["id"]
+
+    sorted_entities = sorted(entities, key=entity_sort)
+    entity_id_to_index = {
+        entity_id: index
+        for index, (entity_id, _) in enumerate(
+            groupby(sorted_entities, key=itemgetter("id"))
+        )
+    }
+
+    def relation_sort(relation_dict: dict) -> tuple[int, int]:
+        from_id = relation_dict["from_id"]
+        to_id = relation_dict["to_id"]
+        from_index = entity_id_to_index.get(from_id)
+        to_index = entity_id_to_index.get(to_id)
+        if not isinstance(from_index, int):
+            raise ValueError(f"Phantom from argument {from_id}")
+        if not isinstance(to_index, int):
+            raise ValueError(f"Phantom to argument {to_id}")
+        return from_index, to_index
+
+    return list(chain(sorted_entities, sorted(relations, key=relation_sort)))
 
 
 def adjudicate_single_id_entity_group[T](
@@ -228,7 +264,6 @@ def adjudicate_correctness_grouped_entities[T](
 
 
 def adjudicate_entities(
-    annotators: EnumType,
     entity_correctness_matrices: Iterable[CorrectnessMatrix],
     argument_entity_ids: Collection[str],
     filter_agreements: bool,
@@ -239,7 +274,6 @@ def adjudicate_entities(
             argument_entity_ids=argument_entity_ids,
             filter_agreements=filter_agreements,
         ),
-        annotators=annotators,
     )
 
 
@@ -289,8 +323,7 @@ def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
 
 
 def adjudicate_id_entity_cluster[T](
-    offsets_entity_cluster: Collection[dict],
-    annotators: EnumType,
+    offsets_entity_cluster: Iterable[dict],
 ) -> Iterable[dict]:
     normal_entity_iter, iaa_entity_iter = partition(
         lambda ent: ent["from_name"] == "IAA", offsets_entity_cluster
@@ -377,43 +410,25 @@ def annotator_name_update(
 
 
 def adjudicate_offset_entity_cluster(
-    offset_entity_cluster: Sequence[dict],
-    annotators: EnumType,
+    offset_entity_cluster: Iterable[dict],
 ) -> Iterable[dict]:
-    # unique_entities = set(map(frozendict, offset_entity_cluster))
-    # if len(unique_entities) != len(offset_entity_cluster):
-    #     logger.warning(
-    #         "%d of %d entities sharing offsets are unique across all attributes",
-    #         len(unique_entities),
-    #         len(offset_entity_cluster),
-    #     )
-    local_id_adjudicate = partial(adjudicate_id_entity_cluster, annotators=annotators)
-    id_clusters = map_reduce(
-        # unique_entities, keyfunc=itemgetter("id"), reducefunc=local_id_adjudicate
-        offset_entity_cluster,
-        keyfunc=itemgetter("id"),
-        reducefunc=local_id_adjudicate,
+    return flatten(
+        map_reduce(
+            offset_entity_cluster,
+            keyfunc=itemgetter("id"),
+            reducefunc=adjudicate_id_entity_cluster,
+        ).values()
     )
-    # if len(id_clusters) > 1:
-    #     logger.warning(
-    #         "%d Label Studio IDs shared across %d unique entities",
-    #         len(id_clusters),
-    #         len(unique_entities),
-    #     )
-    return flatten(id_clusters.values())
 
 
 def coordinate_adjudicated_entities(
-    adjudicated_entities: Iterable[dict], annotators: EnumType
+    adjudicated_entities: Iterable[dict],
 ) -> Iterable[dict]:
-    local_offset_adjudicate = partial(
-        adjudicate_offset_entity_cluster, annotators=annotators
-    )
     return flatten(
         map_reduce(
             adjudicated_entities,
             keyfunc=entity_offsets,
-            reducefunc=local_offset_adjudicate,
+            reducefunc=adjudicate_offset_entity_cluster,
         ).values()
     )
 
