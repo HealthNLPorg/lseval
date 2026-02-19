@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -77,7 +79,7 @@ class Entity:
             return self.overlap_match(other)
         return self.span == other.span
 
-    def overlap_match(self, other: "Entity") -> bool:
+    def overlap_match(self, other: Entity) -> bool:
         return self.span[0] < other.span[1] and self.span[1] > other.span[0]
 
 

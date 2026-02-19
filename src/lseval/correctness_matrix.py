@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
