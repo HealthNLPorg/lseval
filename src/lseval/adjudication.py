@@ -342,11 +342,9 @@ def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[
         except RuntimeError:
             raise ValueError("No clustered_entities for a key, shouldn't be possible")
 
-    return flatten(
-        map_reduce(
-            entities, keyfunc=itemgetter("from_name"), reducefunc=warned_first
-        ).values()
-    )
+    return map_reduce(
+        entities, keyfunc=itemgetter("from_name"), reducefunc=warned_first
+    ).values()
 
 
 def adjudicate_id_entity_cluster[T](
