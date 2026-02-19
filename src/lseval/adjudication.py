@@ -322,12 +322,40 @@ def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
     return reference_annotations[0]
 
 
+def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[dict]:
+    def warned_first(clustered_entities: Sequence[dict]) -> dict:
+        try:
+            return one(clustered_entities, too_short=RuntimeError, too_long=IndexError)
+        except IndexError:
+            first = clustered_entities[0]
+            first_offsets = entity_offsets(first)
+            first_from_name = first["from_name"]
+            first_id = first["id"]
+            logger.warning(
+                "%d clustered_entities for same from_name %s for entity with id %s and offsets %s",
+                len(clustered_entities),
+                first_from_name,
+                first_id,
+                str(first_offsets),
+            )
+            return first
+        except RuntimeError:
+            raise ValueError("No clustered_entities for a key, shouldn't be possible")
+
+    return flatten(
+        map_reduce(
+            entities, keyfunc=itemgetter("from_name"), reducefunc=warned_first
+        ).values()
+    )
+
+
 def adjudicate_id_entity_cluster[T](
     offsets_entity_cluster: Iterable[dict],
 ) -> Iterable[dict]:
     normal_entity_iter, iaa_entity_iter = partition(
         lambda ent: ent["from_name"] == "IAA", offsets_entity_cluster
     )
+
     agreements, disagreements = map(
         list,
         partition(
@@ -335,6 +363,7 @@ def adjudicate_id_entity_cluster[T](
             iaa_entity_iter,
         ),
     )
+    cleaned_normal_entities = deduplicate_shared_offset_id_entities(normal_entity_iter)
     match len(agreements), len(disagreements):
         case 0, 0:
             # Should have adjudication entities even if they're agreements
@@ -346,7 +375,10 @@ def adjudicate_id_entity_cluster[T](
             )
         case (0, 1) | (1, 0):
             # Haven't seen any inconsistencies for singletons TODO yet...
-            yield from offsets_entity_cluster  # this gives us all the non-IAA entities along with the singleton IAA entity
+            yield (
+                agreements[0] if len(agreements) == 1 else disagreements[0]
+            )  # this gives us all the non-IAA entities along with the singleton IAA entity
+            yield from cleaned_normal_entities
             return
         case (
             _,
@@ -354,7 +386,7 @@ def adjudicate_id_entity_cluster[T](
         ) if len(agreements) > 1:
             # TODO - figure out why this nonsense happens
             yield agreements[0]
-            yield from normal_entity_iter
+            yield from cleaned_normal_entities
             return
         # Disagreements override agreements if they exist since we're clustering
         case _:
@@ -368,7 +400,7 @@ def adjudicate_id_entity_cluster[T](
                 #     f"{len(disagreements)} IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets} with the same annotator values {disagreement_types[0]} - {disagreements}"
                 # )
                 yield disagreements[0]
-                yield from normal_entity_iter
+                yield from cleaned_normal_entities
                 return
             unique_non_agreement = set(disagreement_types)
             out_of_scope = unique_non_agreement - {
@@ -396,7 +428,7 @@ def adjudicate_id_entity_cluster[T](
                     # but I'd rather be specific
                     raise ValueError(f"Erroneous annotator choices {out_of_scope}")
 
-    yield from normal_entity_iter
+    yield from cleaned_normal_entities
 
 
 def annotator_name_update(
