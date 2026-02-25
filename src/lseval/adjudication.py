@@ -530,13 +530,7 @@ def adjudicate_correctness_grouped_relations(
             from_id=from_id,
             to_id=to_id,
             direction=label_relations[0]["direction"],
-            labels=[annotator.name],
-        )
-        yield labels_relation_to_json_relation(
-            from_id=from_id,
-            to_id=to_id,
-            direction=label_relations[0]["direction"],
-            labels=label_relations[0]["labels"],
+            labels=[annotator.name, *label_relations[0]["labels"]],
         )
 
 
