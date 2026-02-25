@@ -9,7 +9,15 @@ from functools import partial
 from itertools import chain, groupby
 from operator import attrgetter, itemgetter
 
-from more_itertools import all_equal, flatten, map_reduce, one, partition
+from frozendict import frozendict
+from more_itertools import (
+    all_equal,
+    flatten,
+    map_reduce,
+    one,
+    partition,
+    unique_everseen,
+)
 
 from lseval.correctness_matrix import Correctness, CorrectnessMatrix
 from lseval.datatypes import Entity, Relation
@@ -181,6 +189,13 @@ def get_adjudication_data(
             filter_agreements,
         )
     )
+    unique_adjudicated_relations = list(
+        unique_everseen(adjudicated_relations, key=frozendict)
+    )
+    if len(adjudicated_relations) != len(unique_adjudicated_relations):
+        raise ValueError(
+            f"Of {len(adjudicated_relations)} adjudicated relations {len(unique_adjudicated_relations)} are unique"
+        )
     argument_entity_ids = set(
         flatten(map(itemgetter("from_id", "to_id"), adjudicated_relations))
     )
@@ -304,20 +319,19 @@ def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
     for annotator, annotation_collection in annotator_to_annotations.items():
         if len(annotation_collection) > 1:
             scapegoat = annotation_collection[0]
-            scapegoat_id = scapegoat.get("id")
             scapegoat_offsets = entity_offsets(scapegoat)
+            print(annotator_to_annotations)
             raise ValueError(
-                f"{len(annotation_collection)} IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets}"
+                f"{annotator} {len(annotation_collection)} IAA entities for one root entity with offsets {scapegoat_offsets}"
             )
     reference_annotations = annotator_to_annotations.get(AnnotatorChoice.REFERENCE)
-    if reference_annotations is None or len(reference_annotations):
+    if reference_annotations is None or len(reference_annotations) == 0:
         scapegoat = next(
             flatten(annotator_to_annotations.values())
         )  # to avoid consuming exhaustible
-        scapegoat_id = scapegoat.get("id")
         scapegoat_offsets = entity_offsets(scapegoat)
         raise ValueError(
-            f"Missing reference annotations for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets}"
+            f"Missing reference annotations for one root entity offsets {scapegoat_offsets}"
         )
     return reference_annotations[0]
 
@@ -389,12 +403,6 @@ def adjudicate_offset_entity_cluster[T](
             # The hard part - this might be worth factoring out into another function
             disagreement_types = list(map(get_annotator, disagreements))
             if len(disagreement_types) > 1 and all_equal(disagreement_types):
-                # scapegoat = disagreements[0]
-                # scapegoat_id = scapegoat.get("id")
-                # scapegoat_offsets = entity_offsets(scapegoat)
-                # raise ValueError(
-                #     f"{len(disagreements)} IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets} with the same annotator values {disagreement_types[0]} - {disagreements}"
-                # )
                 yield disagreements[0]
                 yield from cleaned_normal_entities
                 return
@@ -436,24 +444,22 @@ def annotator_name_update(
         yield entity
 
 
-# def adjudicate_offset_entity_cluster(
-#     offset_entity_cluster: Iterable[dict],
-# ) -> Iterable[dict]:
-#     return flatten(
-#         map_reduce(
-#             offset_entity_cluster,
-#             keyfunc=itemgetter("id"),
-#             reducefunc=adjudicate_id_entity_cluster,
-#         ).values()
-#     )
-
-
 def coordinate_adjudicated_entities(
     adjudicated_entities: Iterable[dict],
 ) -> Iterable[dict]:
+    sized_adjudicated_entities = list(adjudicated_entities)
+    unique_adjudicated_entities = list(
+        unique_everseen(sized_adjudicated_entities, key=frozendict)
+    )
+    if len(sized_adjudicated_entities) != len(unique_adjudicated_entities):
+        logger.warning(
+            "Of %d adjudicated entities %d are unique",
+            len(sized_adjudicated_entities),
+            len(unique_adjudicated_entities),
+        )
     return flatten(
         map_reduce(
-            adjudicated_entities,
+            unique_adjudicated_entities,
             keyfunc=entity_offsets,
             reducefunc=adjudicate_offset_entity_cluster,
         ).values()
