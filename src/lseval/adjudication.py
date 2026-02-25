@@ -330,12 +330,10 @@ def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[
             first = clustered_entities[0]
             first_offsets = entity_offsets(first)
             first_from_name = first["from_name"]
-            first_id = first["id"]
             logger.warning(
-                "%d clustered_entities for same from_name %s for entity with id %s and offsets %s",
+                "%d clustered_entities for same from_name %s for entity offsets %s",
                 len(clustered_entities),
                 first_from_name,
-                first_id,
                 str(first_offsets),
             )
             return first
@@ -347,7 +345,8 @@ def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[
     ).values()
 
 
-def adjudicate_id_entity_cluster[T](
+# def adjudicate_id_entity_cluster[T](
+def adjudicate_offset_entity_cluster[T](
     offsets_entity_cluster: Iterable[dict],
 ) -> Iterable[dict]:
     normal_entity_iter, iaa_entity_iter = partition(
@@ -366,10 +365,9 @@ def adjudicate_id_entity_cluster[T](
         case 0, 0:
             # Should have adjudication entities even if they're agreements
             scapegoat = next(iter(offsets_entity_cluster))
-            scapegoat_id = scapegoat.get("id")
             scapegoat_offsets = entity_offsets(scapegoat)
             raise ValueError(
-                f"Missing IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets}"
+                f"Missing IAA entities for root entity with offsets {scapegoat_offsets}"
             )
         case (0, 1) | (1, 0):
             # Haven't seen any inconsistencies for singletons TODO yet...
@@ -413,10 +411,9 @@ def adjudicate_id_entity_cluster[T](
                 case 1:
                     if len(disagreements) > 1:
                         scapegoat = disagreements[0]
-                        scapegoat_id = scapegoat.get("id")
                         scapegoat_offsets = entity_offsets(scapegoat)
                         raise ValueError(
-                            f"{len(disagreements)} disagreement IAA entities for one root entity with id {scapegoat_id} and offsets {scapegoat_offsets}"
+                            f"{len(disagreements)} disagreement IAA entities for root entity with offsets {scapegoat_offsets}"
                         )
                     yield disagreements[0]
                 case 2:
@@ -439,16 +436,16 @@ def annotator_name_update(
         yield entity
 
 
-def adjudicate_offset_entity_cluster(
-    offset_entity_cluster: Iterable[dict],
-) -> Iterable[dict]:
-    return flatten(
-        map_reduce(
-            offset_entity_cluster,
-            keyfunc=itemgetter("id"),
-            reducefunc=adjudicate_id_entity_cluster,
-        ).values()
-    )
+# def adjudicate_offset_entity_cluster(
+#     offset_entity_cluster: Iterable[dict],
+# ) -> Iterable[dict]:
+#     return flatten(
+#         map_reduce(
+#             offset_entity_cluster,
+#             keyfunc=itemgetter("id"),
+#             reducefunc=adjudicate_id_entity_cluster,
+#         ).values()
+#     )
 
 
 def coordinate_adjudicated_entities(
