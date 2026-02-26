@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+import operator
 import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from enum import Enum, EnumType, StrEnum
-from functools import partial
+from functools import partial, reduce
 from itertools import chain, groupby
 from operator import attrgetter, itemgetter
 
 from frozendict import frozendict
 from more_itertools import (
-    all_equal,
     flatten,
     map_reduce,
     one,
-    partition,
     unique_everseen,
 )
 
@@ -359,79 +359,218 @@ def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[
     ).values()
 
 
-# def adjudicate_id_entity_cluster[T](
+# For now just select which has most annotations
+def select_most_informative_cluster[T, S](
+    ids: Collection[T], id_to_entities: Mapping[T, Collection[S]]
+) -> T:
+    return max(ids, key=lambda _id: len(id_to_entities.get(_id, [])))
+
+
+def get_consistent_cluster(cluster: Iterable[dict]) -> Sequence[dict]:
+    cluster = list(cluster)
+    cleaned_cluster = list(unique_everseen(cluster, key=itemgetter("from_name")))
+    if len(cluster) != len(cleaned_cluster):
+        logger.warning("Duplicate entity types in cluster")
+    return cleaned_cluster
+
+
+def select_most_prominent_id(type_to_annotations: Mapping[str, Sequence[dict]]) -> str:
+    type_to_id_totals = {
+        _type: Counter(map(itemgetter("id"), annotations))
+        for _type, annotations in type_to_annotations.items()
+    }
+
+    # Ideally want to use an ID which is in all of them
+    def get_coverage(_id: str) -> int:
+        return sum(1 for id_totals in type_to_id_totals.values() if _id in id_totals)
+
+    all_ids = set(flatten(type_to_id_totals.values()))
+    id_to_coverage = Counter({_id: get_coverage(_id) for _id in all_ids})
+    id_to_type_agnostic_coverage = reduce(operator.add, type_to_id_totals.values())
+
+    def coverage_then_total(_id: str) -> tuple[int, int]:
+        return id_to_coverage[_id], id_to_type_agnostic_coverage[_id]
+
+    return sorted(all_ids, key=coverage_then_total, reverse=True)[0]
+
+
+def wrangle_mixed[T](
+    annotator_to_annotations: Mapping[T, Sequence[dict]],
+) -> Iterable[dict]:
+    type_to_annotations = map_reduce(
+        flatten(annotator_to_annotations.values()), keyfunc=itemgetter("from_name")
+    )
+    type_to_disagreement_annotations = map_reduce(
+        flatten(
+            values
+            for annotator, values in annotator_to_annotations.items()
+            if annotator != AnnotatorChoice.AGREEMENT
+        ),
+        keyfunc=itemgetter("from_name"),
+    )
+    most_prominent_disagreement_id = select_most_prominent_id(
+        type_to_disagreement_annotations
+    )
+    for _type, type_grouped_annotations in type_to_annotations.items():
+        candidates = [
+            annotation
+            for annotation in type_grouped_annotations
+            if annotation["id"] == most_prominent_disagreement_id
+        ]
+        try:
+            yield one(candidates, too_short=IndexError, too_long=ValueError)
+        except IndexError:
+            with_wrong_id = type_grouped_annotations[0]
+            with_wrong_id["id"] = most_prominent_disagreement_id
+            yield with_wrong_id
+        except ValueError:
+            candidate = candidates[0]
+            logger.warning(
+                "%d candidates found for entity with id %s and type %s",
+                len(candidates),
+                candidate["id"],
+                _type,
+            )
+            yield candidate
+
+
 def adjudicate_offset_entity_cluster[T](
     offsets_entity_cluster: Iterable[dict],
 ) -> Iterable[dict]:
-    normal_entity_iter, iaa_entity_iter = partition(
-        lambda ent: ent["from_name"] == "IAA", offsets_entity_cluster
+    id_to_entities = map_reduce(
+        offsets_entity_cluster,
+        keyfunc=itemgetter("id"),
+        reducefunc=get_consistent_cluster,
     )
-
-    agreements, disagreements = map(
-        list,
-        partition(
-            lambda ent: get_annotator(ent) != AnnotatorChoice.AGREEMENT,
-            iaa_entity_iter,
-        ),
-    )
-    cleaned_normal_entities = deduplicate_shared_offset_id_entities(normal_entity_iter)
-    match len(agreements), len(disagreements):
-        case 0, 0:
-            # Should have adjudication entities even if they're agreements
-            scapegoat = next(iter(offsets_entity_cluster))
-            scapegoat_offsets = entity_offsets(scapegoat)
-            raise ValueError(
-                f"Missing IAA entities for root entity with offsets {scapegoat_offsets}"
+    annotator_to_ids = defaultdict(set)
+    annotator_to_id = {}
+    for entity in flatten(id_to_entities.values()):
+        if entity["from_name"] == "IAA":
+            annotator_to_ids[get_annotator(entity)].add(entity["id"])
+    for annotator, ids in annotator_to_ids.items():
+        try:
+            annotator_to_id[annotator] = one(
+                ids, too_short=IndexError, too_long=ValueError
             )
-        case (0, 1) | (1, 0):
-            # Haven't seen any inconsistencies for singletons TODO yet...
-            yield (
-                agreements[0] if len(agreements) == 1 else disagreements[0]
-            )  # this gives us all the non-IAA entities along with the singleton IAA entity
-            yield from cleaned_normal_entities
-            return
+        except IndexError:
+            raise ValueError(
+                f"No IDs associated with annotator {annotator} - shouldn't happen"
+            )
+        except ValueError:
+            logger.warning(
+                "Mutliple ids annotation %s found for annotator %s. Selecting most informative",
+                ", ".join(ids),
+                annotator.value,
+            )
+            annotator_to_id[annotator] = select_most_informative_cluster(
+                ids=ids, id_to_entities=id_to_entities
+            )
+    # TODO clustering should be easier from here
+    annotator_to_annotations = {
+        annotator: id_to_entities.get(_id, [])
+        for annotator, _id in annotator_to_id.items()
+    }
+    agreements = annotator_to_annotations.get(AnnotatorChoice.AGREEMENT, [])
+    predictions = annotator_to_annotations.get(AnnotatorChoice.PREDICTION, [])
+    references = annotator_to_annotations.get(AnnotatorChoice.REFERENCE, [])
+    match len(agreements), len(predictions), len(references):
+        case 0, 0, 0:
+            raise ValueError("Shouldn't happen")
         case (
-            _,
+            total_agreements,
             0,
-        ) if len(agreements) > 1:
-            # TODO - figure out why this nonsense happens
-            yield agreements[0]
-            yield from cleaned_normal_entities
-            return
-        # Disagreements override agreements if they exist since we're clustering
+            0,
+        ) if total_agreements > 0:
+            return agreements
+        case (
+            0,
+            total_predictions,
+            0,
+        ) if total_predictions > 0:
+            return predictions
+        case (
+            0,
+            0,
+            total_references,
+        ) if total_references > 0:
+            return references
         case _:
-            # The hard part - this might be worth factoring out into another function
-            disagreement_types = list(map(get_annotator, disagreements))
-            if len(disagreement_types) > 1 and all_equal(disagreement_types):
-                yield disagreements[0]
-                yield from cleaned_normal_entities
-                return
-            unique_non_agreement = set(disagreement_types)
-            out_of_scope = unique_non_agreement - {
-                AnnotatorChoice.PREDICTION,
-                AnnotatorChoice.REFERENCE,
-            }
-            if len(out_of_scope) > 0:
-                raise ValueError(f"Erroneous annotator choices {out_of_scope}")
-            match len(unique_non_agreement):
-                case 0:
-                    raise ValueError("Technically impossible")
-                case 1:
-                    if len(disagreements) > 1:
-                        scapegoat = disagreements[0]
-                        scapegoat_offsets = entity_offsets(scapegoat)
-                        raise ValueError(
-                            f"{len(disagreements)} disagreement IAA entities for root entity with offsets {scapegoat_offsets}"
-                        )
-                    yield disagreements[0]
-                case 2:
-                    yield wrangle_conflicts(disagreements=disagreements)
-                case _:
-                    # Shouldn't be able to get here given the previous guard
-                    # but I'd rather be specific
-                    raise ValueError(f"Erroneous annotator choices {out_of_scope}")
+            yield from wrangle_mixed(annotator_to_annotations)
 
-    yield from cleaned_normal_entities
+
+# def adjudicate_id_entity_cluster[T](
+# def old_adjudicate_offset_entity_cluster[T](
+#     offsets_entity_cluster: Iterable[dict],
+# ) -> Iterable[dict]:
+#     normal_entity_iter, iaa_entity_iter = partition(
+#         lambda ent: ent["from_name"] == "IAA", offsets_entity_cluster
+#     )
+
+#     agreements, disagreements = map(
+#         list,
+#         partition(
+#             lambda ent: get_annotator(ent) != AnnotatorChoice.AGREEMENT,
+#             iaa_entity_iter,
+#         ),
+#     )
+#     cleaned_normal_entities = deduplicate_shared_offset_id_entities(normal_entity_iter)
+#     match len(agreements), len(disagreements):
+#         case 0, 0:
+#             # Should have adjudication entities even if they're agreements
+#             scapegoat = next(iter(offsets_entity_cluster))
+#             scapegoat_offsets = entity_offsets(scapegoat)
+#             raise ValueError(
+#                 f"Missing IAA entities for root entity with offsets {scapegoat_offsets}"
+#             )
+#         case (0, 1) | (1, 0):
+#             # Haven't seen any inconsistencies for singletons TODO yet...
+#             yield (
+#                 agreements[0] if len(agreements) == 1 else disagreements[0]
+#             )  # this gives us all the non-IAA entities along with the singleton IAA entity
+#             yield from cleaned_normal_entities
+#             return
+#         case (
+#             _,
+#             0,
+#         ) if len(agreements) > 1:
+#             # TODO - figure out why this nonsense happens
+#             yield agreements[0]
+#             yield from cleaned_normal_entities
+#             return
+#         # Disagreements override agreements if they exist since we're clustering
+#         case _:
+#             # The hard part - this might be worth factoring out into another function
+#             disagreement_types = list(map(get_annotator, disagreements))
+#             if len(disagreement_types) > 1 and all_equal(disagreement_types):
+#                 yield disagreements[0]
+#                 yield from cleaned_normal_entities
+#                 return
+#             unique_non_agreement = set(disagreement_types)
+#             out_of_scope = unique_non_agreement - {
+#                 AnnotatorChoice.PREDICTION,
+#                 AnnotatorChoice.REFERENCE,
+#             }
+#             if len(out_of_scope) > 0:
+#                 raise ValueError(f"Erroneous annotator choices {out_of_scope}")
+#             match len(unique_non_agreement):
+#                 case 0:
+#                     raise ValueError("Technically impossible")
+#                 case 1:
+#                     if len(disagreements) > 1:
+#                         scapegoat = disagreements[0]
+#                         scapegoat_offsets = entity_offsets(scapegoat)
+#                         raise ValueError(
+#                             f"{len(disagreements)} disagreement IAA entities for root entity with offsets {scapegoat_offsets}"
+#                         )
+#                     yield disagreements[0]
+#                 case 2:
+#                     yield wrangle_conflicts(disagreements=disagreements)
+#                 case _:
+#                     # Shouldn't be able to get here given the previous guard
+#                     # but I'd rather be specific
+#                     raise ValueError(f"Erroneous annotator choices {out_of_scope}")
+
+#     yield from cleaned_normal_entities
 
 
 def annotator_name_update(
