@@ -289,6 +289,7 @@ def adjudicate_entities(
             argument_entity_ids=argument_entity_ids,
             filter_agreements=filter_agreements,
         ),
+        argument_entity_ids=argument_entity_ids,
     )
 
 
@@ -314,26 +315,25 @@ def get_annotator[T](ls_dict: dict) -> T:
 # Assumes annotators will be AnnotatorChoice.PREDICTION and AnnotatorChoice.REFERENCE,
 # since agreements, improper values, and singletons will be filtered out upstream
 # default is select singleton from reference
-def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
-    annotator_to_annotations = map_reduce(disagreements, keyfunc=get_annotator)
-    for annotator, annotation_collection in annotator_to_annotations.items():
-        if len(annotation_collection) > 1:
-            scapegoat = annotation_collection[0]
-            scapegoat_offsets = entity_offsets(scapegoat)
-            print(annotator_to_annotations)
-            raise ValueError(
-                f"{annotator} {len(annotation_collection)} IAA entities for one root entity with offsets {scapegoat_offsets}"
-            )
-    reference_annotations = annotator_to_annotations.get(AnnotatorChoice.REFERENCE)
-    if reference_annotations is None or len(reference_annotations) == 0:
-        scapegoat = next(
-            flatten(annotator_to_annotations.values())
-        )  # to avoid consuming exhaustible
-        scapegoat_offsets = entity_offsets(scapegoat)
-        raise ValueError(
-            f"Missing reference annotations for one root entity offsets {scapegoat_offsets}"
-        )
-    return reference_annotations[0]
+# def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
+#     annotator_to_annotations = map_reduce(disagreements, keyfunc=get_annotator)
+#     for annotator, annotation_collection in annotator_to_annotations.items():
+#         if len(annotation_collection) > 1:
+#             scapegoat = annotation_collection[0]
+#             scapegoat_offsets = entity_offsets(scapegoat)
+#             raise ValueError(
+#                 f"{annotator} {len(annotation_collection)} IAA entities for one root entity with offsets {scapegoat_offsets}"
+#             )
+#     reference_annotations = annotator_to_annotations.get(AnnotatorChoice.REFERENCE)
+#     if reference_annotations is None or len(reference_annotations) == 0:
+#         scapegoat = next(
+#             flatten(annotator_to_annotations.values())
+#         )  # to avoid consuming exhaustible
+#         scapegoat_offsets = entity_offsets(scapegoat)
+#         raise ValueError(
+#             f"Missing reference annotations for one root entity offsets {scapegoat_offsets}"
+#         )
+#     return reference_annotations[0]
 
 
 def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[dict]:
@@ -374,7 +374,18 @@ def get_consistent_cluster(cluster: Iterable[dict]) -> Sequence[dict]:
     return cleaned_cluster
 
 
-def select_most_prominent_id(type_to_annotations: Mapping[str, Sequence[dict]]) -> str:
+def select_target_ids(
+    type_to_annotations: Mapping[str, Sequence[dict]],
+    all_ids: Collection[str],
+    relation_roots: Collection[str],
+) -> tuple[str, str | None]:
+    targets = {_id for _id in all_ids if _id in relation_roots}
+    try:
+        set_target = one(targets, too_short=IndexError, too_long=ValueError)
+    except IndexError:
+        set_target = None
+    except ValueError:
+        raise ValueError("What would we even do in this case")
     type_to_id_totals = {
         _type: Counter(map(itemgetter("id"), annotations))
         for _type, annotations in type_to_annotations.items()
@@ -384,18 +395,19 @@ def select_most_prominent_id(type_to_annotations: Mapping[str, Sequence[dict]]) 
     def get_coverage(_id: str) -> int:
         return sum(1 for id_totals in type_to_id_totals.values() if _id in id_totals)
 
-    all_ids = set(flatten(type_to_id_totals.values()))
     id_to_coverage = Counter({_id: get_coverage(_id) for _id in all_ids})
     id_to_type_agnostic_coverage = reduce(operator.add, type_to_id_totals.values())
 
     def coverage_then_total(_id: str) -> tuple[int, int]:
         return id_to_coverage[_id], id_to_type_agnostic_coverage[_id]
 
-    return sorted(all_ids, key=coverage_then_total, reverse=True)[0]
+    get_target = sorted(all_ids, key=coverage_then_total, reverse=True)[0]
+    return get_target, set_target
 
 
 def wrangle_mixed[T](
     annotator_to_annotations: Mapping[T, Sequence[dict]],
+    argument_entity_ids: Collection[str],
 ) -> Iterable[dict]:
     type_to_annotations = map_reduce(
         flatten(annotator_to_annotations.values()), keyfunc=itemgetter("from_name")
@@ -408,21 +420,25 @@ def wrangle_mixed[T](
         ),
         keyfunc=itemgetter("from_name"),
     )
-    most_prominent_disagreement_id = select_most_prominent_id(
-        type_to_disagreement_annotations
+    all_disagreement_ids = set(
+        map(itemgetter("id"), flatten(type_to_disagreement_annotations.values()))
+    )
+    get_target, set_target = select_target_ids(
+        type_to_annotations=type_to_disagreement_annotations,
+        all_ids=all_disagreement_ids,
+        relation_roots=argument_entity_ids,
     )
     for _type, type_grouped_annotations in type_to_annotations.items():
         candidates = [
             annotation
             for annotation in type_grouped_annotations
-            if annotation["id"] == most_prominent_disagreement_id
+            if annotation["id"] == get_target
         ]
         try:
-            yield one(candidates, too_short=IndexError, too_long=ValueError)
+            candidate = one(candidates, too_short=IndexError, too_long=ValueError)
         except IndexError:
-            with_wrong_id = type_grouped_annotations[0]
-            with_wrong_id["id"] = most_prominent_disagreement_id
-            yield with_wrong_id
+            candidate = type_grouped_annotations[0]
+            candidate["id"] = get_target
         except ValueError:
             candidate = candidates[0]
             logger.warning(
@@ -431,11 +447,14 @@ def wrangle_mixed[T](
                 candidate["id"],
                 _type,
             )
-            yield candidate
+        if set_target is not None:
+            candidate["id"] = set_target
+        yield candidate
 
 
 def adjudicate_offset_entity_cluster[T](
     offsets_entity_cluster: Iterable[dict],
+    argument_entity_ids: Collection[str],
 ) -> Iterable[dict]:
     id_to_entities = map_reduce(
         offsets_entity_cluster,
@@ -495,7 +514,10 @@ def adjudicate_offset_entity_cluster[T](
         ) if total_references > 0:
             return references
         case _:
-            yield from wrangle_mixed(annotator_to_annotations)
+            yield from wrangle_mixed(
+                annotator_to_annotations=annotator_to_annotations,
+                argument_entity_ids=argument_entity_ids,
+            )
 
 
 # def adjudicate_id_entity_cluster[T](
@@ -585,6 +607,7 @@ def annotator_name_update(
 
 def coordinate_adjudicated_entities(
     adjudicated_entities: Iterable[dict],
+    argument_entity_ids: Collection[str],
 ) -> Iterable[dict]:
     sized_adjudicated_entities = list(adjudicated_entities)
     unique_adjudicated_entities = list(
@@ -600,7 +623,10 @@ def coordinate_adjudicated_entities(
         map_reduce(
             unique_adjudicated_entities,
             keyfunc=entity_offsets,
-            reducefunc=adjudicate_offset_entity_cluster,
+            reducefunc=partial(
+                adjudicate_offset_entity_cluster,
+                argument_entity_ids=argument_entity_ids,
+            ),
         ).values()
     )
 
