@@ -312,30 +312,6 @@ def get_annotator[T](ls_dict: dict) -> T:
         raise ValueError(f"Too many or few few values for annotators {annotators}")
 
 
-# Assumes annotators will be AnnotatorChoice.PREDICTION and AnnotatorChoice.REFERENCE,
-# since agreements, improper values, and singletons will be filtered out upstream
-# default is select singleton from reference
-# def wrangle_conflicts(disagreements: Iterable[dict]) -> dict:
-#     annotator_to_annotations = map_reduce(disagreements, keyfunc=get_annotator)
-#     for annotator, annotation_collection in annotator_to_annotations.items():
-#         if len(annotation_collection) > 1:
-#             scapegoat = annotation_collection[0]
-#             scapegoat_offsets = entity_offsets(scapegoat)
-#             raise ValueError(
-#                 f"{annotator} {len(annotation_collection)} IAA entities for one root entity with offsets {scapegoat_offsets}"
-#             )
-#     reference_annotations = annotator_to_annotations.get(AnnotatorChoice.REFERENCE)
-#     if reference_annotations is None or len(reference_annotations) == 0:
-#         scapegoat = next(
-#             flatten(annotator_to_annotations.values())
-#         )  # to avoid consuming exhaustible
-#         scapegoat_offsets = entity_offsets(scapegoat)
-#         raise ValueError(
-#             f"Missing reference annotations for one root entity offsets {scapegoat_offsets}"
-#         )
-#     return reference_annotations[0]
-
-
 def deduplicate_shared_offset_id_entities(entities: Iterable[dict]) -> Iterable[dict]:
     def warned_first(clustered_entities: Sequence[dict]) -> dict:
         try:
@@ -366,8 +342,7 @@ def select_most_informative_cluster[T, S](
     return max(ids, key=lambda _id: len(id_to_entities.get(_id, [])))
 
 
-def get_consistent_cluster(cluster: Iterable[dict]) -> Sequence[dict]:
-    cluster = list(cluster)
+def get_consistent_cluster(cluster: Collection[dict]) -> Sequence[dict]:
     cleaned_cluster = list(unique_everseen(cluster, key=itemgetter("from_name")))
     if len(cluster) != len(cleaned_cluster):
         logger.warning("Duplicate entity types in cluster")
@@ -375,10 +350,12 @@ def get_consistent_cluster(cluster: Iterable[dict]) -> Sequence[dict]:
 
 
 def select_target_ids(
-    type_to_annotations: Mapping[str, Sequence[dict]],
-    all_ids: Collection[str],
+    type_to_disagreement_annotations: Mapping[str, Sequence[dict]],
+    agreement_ids: Collection[str],
+    disagreement_ids: Collection[str],
     relation_roots: Collection[str],
 ) -> tuple[str, str | None]:
+    all_ids = set(chain(agreement_ids, disagreement_ids))
     targets = {_id for _id in all_ids if _id in relation_roots}
     try:
         set_target = one(targets, too_short=IndexError, too_long=ValueError)
@@ -388,7 +365,7 @@ def select_target_ids(
         raise ValueError("What would we even do in this case")
     type_to_id_totals = {
         _type: Counter(map(itemgetter("id"), annotations))
-        for _type, annotations in type_to_annotations.items()
+        for _type, annotations in type_to_disagreement_annotations.items()
     }
 
     # Ideally want to use an ID which is in all of them
@@ -412,6 +389,15 @@ def wrangle_mixed[T](
     type_to_annotations = map_reduce(
         flatten(annotator_to_annotations.values()), keyfunc=itemgetter("from_name")
     )
+    type_to_agreement_annotations = map_reduce(
+        flatten(
+            values
+            for annotator, values in annotator_to_annotations.items()
+            if annotator == AnnotatorChoice.AGREEMENT
+        ),
+        keyfunc=itemgetter("from_name"),
+    )
+
     type_to_disagreement_annotations = map_reduce(
         flatten(
             values
@@ -420,12 +406,17 @@ def wrangle_mixed[T](
         ),
         keyfunc=itemgetter("from_name"),
     )
-    all_disagreement_ids = set(
+    disagreement_ids = set(
         map(itemgetter("id"), flatten(type_to_disagreement_annotations.values()))
     )
+    agreement_ids = set(
+        map(itemgetter("id"), flatten(type_to_agreement_annotations.values()))
+    )
+
     get_target, set_target = select_target_ids(
-        type_to_annotations=type_to_disagreement_annotations,
-        all_ids=all_disagreement_ids,
+        type_to_disagreement_annotations=type_to_disagreement_annotations,
+        agreement_ids=agreement_ids,
+        disagreement_ids=disagreement_ids,
         relation_roots=argument_entity_ids,
     )
     for _type, type_grouped_annotations in type_to_annotations.items():
@@ -453,7 +444,7 @@ def wrangle_mixed[T](
 
 
 def adjudicate_offset_entity_cluster[T](
-    offsets_entity_cluster: Iterable[dict],
+    offsets_entity_cluster: Sequence[dict],
     argument_entity_ids: Collection[str],
 ) -> Iterable[dict]:
     id_to_entities = map_reduce(
@@ -484,7 +475,6 @@ def adjudicate_offset_entity_cluster[T](
             annotator_to_id[annotator] = select_most_informative_cluster(
                 ids=ids, id_to_entities=id_to_entities
             )
-    # TODO clustering should be easier from here
     annotator_to_annotations = {
         annotator: id_to_entities.get(_id, [])
         for annotator, _id in annotator_to_id.items()
@@ -500,99 +490,24 @@ def adjudicate_offset_entity_cluster[T](
             0,
             0,
         ) if total_agreements > 0:
-            return agreements
+            yield from agreements
         case (
             0,
             total_predictions,
             0,
         ) if total_predictions > 0:
-            return predictions
+            yield from predictions
         case (
             0,
             0,
             total_references,
         ) if total_references > 0:
-            return references
+            yield from references
         case _:
             yield from wrangle_mixed(
                 annotator_to_annotations=annotator_to_annotations,
                 argument_entity_ids=argument_entity_ids,
             )
-
-
-# def adjudicate_id_entity_cluster[T](
-# def old_adjudicate_offset_entity_cluster[T](
-#     offsets_entity_cluster: Iterable[dict],
-# ) -> Iterable[dict]:
-#     normal_entity_iter, iaa_entity_iter = partition(
-#         lambda ent: ent["from_name"] == "IAA", offsets_entity_cluster
-#     )
-
-#     agreements, disagreements = map(
-#         list,
-#         partition(
-#             lambda ent: get_annotator(ent) != AnnotatorChoice.AGREEMENT,
-#             iaa_entity_iter,
-#         ),
-#     )
-#     cleaned_normal_entities = deduplicate_shared_offset_id_entities(normal_entity_iter)
-#     match len(agreements), len(disagreements):
-#         case 0, 0:
-#             # Should have adjudication entities even if they're agreements
-#             scapegoat = next(iter(offsets_entity_cluster))
-#             scapegoat_offsets = entity_offsets(scapegoat)
-#             raise ValueError(
-#                 f"Missing IAA entities for root entity with offsets {scapegoat_offsets}"
-#             )
-#         case (0, 1) | (1, 0):
-#             # Haven't seen any inconsistencies for singletons TODO yet...
-#             yield (
-#                 agreements[0] if len(agreements) == 1 else disagreements[0]
-#             )  # this gives us all the non-IAA entities along with the singleton IAA entity
-#             yield from cleaned_normal_entities
-#             return
-#         case (
-#             _,
-#             0,
-#         ) if len(agreements) > 1:
-#             # TODO - figure out why this nonsense happens
-#             yield agreements[0]
-#             yield from cleaned_normal_entities
-#             return
-#         # Disagreements override agreements if they exist since we're clustering
-#         case _:
-#             # The hard part - this might be worth factoring out into another function
-#             disagreement_types = list(map(get_annotator, disagreements))
-#             if len(disagreement_types) > 1 and all_equal(disagreement_types):
-#                 yield disagreements[0]
-#                 yield from cleaned_normal_entities
-#                 return
-#             unique_non_agreement = set(disagreement_types)
-#             out_of_scope = unique_non_agreement - {
-#                 AnnotatorChoice.PREDICTION,
-#                 AnnotatorChoice.REFERENCE,
-#             }
-#             if len(out_of_scope) > 0:
-#                 raise ValueError(f"Erroneous annotator choices {out_of_scope}")
-#             match len(unique_non_agreement):
-#                 case 0:
-#                     raise ValueError("Technically impossible")
-#                 case 1:
-#                     if len(disagreements) > 1:
-#                         scapegoat = disagreements[0]
-#                         scapegoat_offsets = entity_offsets(scapegoat)
-#                         raise ValueError(
-#                             f"{len(disagreements)} disagreement IAA entities for root entity with offsets {scapegoat_offsets}"
-#                         )
-#                     yield disagreements[0]
-#                 case 2:
-#                     yield wrangle_conflicts(disagreements=disagreements)
-#                 case _:
-#                     # Shouldn't be able to get here given the previous guard
-#                     # but I'd rather be specific
-#                     raise ValueError(f"Erroneous annotator choices {out_of_scope}")
-
-#     yield from cleaned_normal_entities
 
 
 def annotator_name_update(
@@ -613,22 +528,23 @@ def coordinate_adjudicated_entities(
     unique_adjudicated_entities = list(
         unique_everseen(sized_adjudicated_entities, key=frozendict)
     )
+
     if len(sized_adjudicated_entities) != len(unique_adjudicated_entities):
         logger.warning(
             "Of %d adjudicated entities %d are unique",
             len(sized_adjudicated_entities),
             len(unique_adjudicated_entities),
         )
-    return flatten(
-        map_reduce(
-            unique_adjudicated_entities,
-            keyfunc=entity_offsets,
-            reducefunc=partial(
-                adjudicate_offset_entity_cluster,
-                argument_entity_ids=argument_entity_ids,
-            ),
-        ).values()
-    )
+
+    for coordinated_offset_cluster in map_reduce(
+        unique_adjudicated_entities,
+        keyfunc=entity_offsets,
+        reducefunc=partial(
+            adjudicate_offset_entity_cluster,
+            argument_entity_ids=argument_entity_ids,
+        ),
+    ).values():
+        yield from coordinated_offset_cluster
 
 
 def adjudicate_individual_entities(
