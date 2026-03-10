@@ -5,7 +5,7 @@ import logging
 import operator
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence, Set
 from enum import Enum, EnumType, StrEnum
 from functools import partial, reduce
 from itertools import chain, groupby
@@ -529,6 +529,9 @@ def coordinate_adjudicated_entities(
         unique_everseen(sized_adjudicated_entities, key=frozendict)
     )
 
+    def get_ids(entities: Collection[dict]) -> Set[str]:
+        return set(map(itemgetter("id"), entities))
+
     if len(sized_adjudicated_entities) != len(unique_adjudicated_entities):
         logger.warning(
             "Of %d adjudicated entities %d are unique",
@@ -536,14 +539,18 @@ def coordinate_adjudicated_entities(
             len(unique_adjudicated_entities),
         )
 
-    for coordinated_offset_cluster in map_reduce(
+    for offsets_entity_cluster in map_reduce(
         unique_adjudicated_entities,
         keyfunc=entity_offsets,
-        reducefunc=partial(
-            adjudicate_offset_entity_cluster,
-            argument_entity_ids=argument_entity_ids,
-        ),
     ).values():
+        coordinated_offset_cluster = list(
+            adjudicate_offset_entity_cluster(
+                offsets_entity_cluster=offsets_entity_cluster,
+                argument_entity_ids=argument_entity_ids,
+            )
+        )
+        if len(coordinated_offset_cluster) == 0:
+            raise ValueError(f"Empty cluster from {coordinated_offset_cluster}")
         yield from coordinated_offset_cluster
 
 
