@@ -82,9 +82,8 @@ def overlap_entity_correctness_matrix(
         else:
             false_positive_entities.update(entities)
     for span, entities in reference_span_to_entities.items():
-        if any(overlap_match(span, pred_span) for pred_span in sorted_predicted_spans):
-            continue
-        false_negative_entities.update(entities)
+        if not any(overlap_match(span, pred_span) for pred_span in sorted_predicted_spans):
+            false_negative_entities.update(entities)
 
     return CorrectnessMatrix(
         true_positives=true_positive_entities,
