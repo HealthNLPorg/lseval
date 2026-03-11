@@ -30,9 +30,6 @@ select = [
     "PIE", # misc
 ]
 
-[tool.uv.sources]
-lseval = { workspace = true }
-
 [dependency-groups]
 lint = [
     "ruff==0.7.1", # same as pre-commit hook and CI

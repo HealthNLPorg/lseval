@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping, Set
 from dataclasses import dataclass, field
 from enum import IntEnum
 from functools import cache
@@ -83,10 +83,10 @@ def score_totals(
 
 @dataclass
 class CorrectnessMatrix[T](Collection[T]):
-    true_positives: Collection[T] = field(default_factory=set)
-    true_negatives: Collection[T] = field(default_factory=set)
-    false_positives: Collection[T] = field(default_factory=set)
-    false_negatives: Collection[T] = field(default_factory=set)
+    true_positives: Set[T] = field(default_factory=set)
+    true_negatives: Set[T] = field(default_factory=set)
+    false_positives: Set[T] = field(default_factory=set)
+    false_negatives: Set[T] = field(default_factory=set)
 
     def get_correctness(self, datum: Any) -> Correctness:
         if self.is_true_positive(datum):
