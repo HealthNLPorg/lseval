@@ -4,7 +4,7 @@ import json
 import logging
 import operator
 from collections import defaultdict, deque
-from collections.abc import Container, Iterable, Mapping, Sequence
+from collections.abc import Collection, Container, Iterable, Mapping, Sequence
 from functools import partial
 from operator import itemgetter
 from typing import cast
@@ -236,7 +236,10 @@ def parse_and_coordinate_relations(
 ) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
         label = annotation["labels"]
-        assert isinstance(label, list)
+        if not issubclass(label, Collection):
+            raise ValueError(
+                f"Label in file ID {file_id} should be subclass of Collection, is {type(label)}"
+            )
         label = tuple(label)
         return Relation(
             file_id=file_id,
