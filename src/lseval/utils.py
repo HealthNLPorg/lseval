@@ -236,7 +236,7 @@ def parse_and_coordinate_relations(
 ) -> Iterable[Relation]:
     def json_annotation_to_relation(annotation: dict) -> Relation:
         label = annotation["labels"]
-        if not issubclass(label, Collection):
+        if not issubclass(type(label), Collection):
             raise ValueError(
                 f"Label in file ID {file_id} should be subclass of Collection, is {type(label)}"
             )
