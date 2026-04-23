@@ -5,6 +5,7 @@
     <Relation value="Probable"/>
     <Relation value="Certain"/>
     <Relation value="Signature"/>
+    <Relation value="SecondaryDose"/>
     <Relation value="Agreement"/>
     <Relation value="Danielle"/>
     <Relation value="Joyce"/>
@@ -27,7 +28,6 @@
       <Label value="Radiotherapy Treatment" background="magenta"/>
     </Labels>
     <Labels name="RadiotherapySignature" toName="text" showInline="true">
-      <Label value="Secondary Dose" background="magenta"/>
       <Label value="Boost" background="fuchsia"/>
       <Label value="Fraction Number" background="seagreen"/>
       <Label value="Fraction Frequency" background="teal"/>
