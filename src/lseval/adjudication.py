@@ -167,7 +167,7 @@ def get_adjudication_data(
     filter_agreements: bool = True,
 ) -> Sequence[dict]:
     annotators = Enum(
-        "Annotator",
+        "annotators",
         [
             (reference_annotator, AnnotatorChoice.REFERENCE),
             (prediction_annotator, AnnotatorChoice.PREDICTION),
