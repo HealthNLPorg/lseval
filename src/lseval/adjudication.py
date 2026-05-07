@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import logging
 import operator
@@ -11,7 +9,7 @@ from functools import partial, reduce
 from itertools import chain, groupby
 from operator import attrgetter, itemgetter
 
-from frozendict import frozendict
+from frozendict import deepfreeze
 from more_itertools import (
     flatten,
     map_reduce,
@@ -190,7 +188,7 @@ def get_adjudication_data(
         )
     )
     unique_adjudicated_relations = list(
-        unique_everseen(adjudicated_relations, key=frozendict)
+        unique_everseen(adjudicated_relations, key=deepfreeze)
     )
     if len(adjudicated_relations) != len(unique_adjudicated_relations):
         raise ValueError(
@@ -510,23 +508,13 @@ def adjudicate_offset_entity_cluster[T](
             )
 
 
-def annotator_name_update(
-    entities: Iterable[dict], annotators: EnumType
-) -> Iterable[dict]:
-    for entity in entities:
-        if entity["from_name"] == "IAA":
-            originals = entity["value"]["choices"]
-            entity["value"]["choices"] = [v.value for v in originals]
-        yield entity
-
-
 def coordinate_adjudicated_entities(
     adjudicated_entities: Iterable[dict],
     argument_entity_ids: Collection[str],
 ) -> Iterable[dict]:
     sized_adjudicated_entities = list(adjudicated_entities)
     unique_adjudicated_entities = list(
-        unique_everseen(sized_adjudicated_entities, key=frozendict)
+        unique_everseen(sized_adjudicated_entities, key=deepfreeze)
     )
 
     def get_ids(entities: Collection[dict]) -> Set[str]:

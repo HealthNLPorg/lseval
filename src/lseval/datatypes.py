@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -19,42 +17,6 @@ class DocTimeRel(Enum):
     @classmethod
     def _missing_(cls, value):
         return DocTimeRel.NA
-
-
-def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
-    return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
-
-
-def admits_bijection[T](preimage: Iterable[T], image: Iterable[T]) -> bool:
-    # reduced function is a permutation but allows for repeats
-    return sorted(Counter(preimage).values()) == sorted(Counter(image).values())
-
-
-def get_nth[T](mapping: Iterable[tuple[T, ...]], n: int) -> Iterable[T]:
-    return map(itemgetter(n), mapping)
-
-
-def get_preimage[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
-    return get_nth(mapping, n=0)
-
-
-def get_image[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
-    return get_nth(mapping, n=1)
-
-
-def overlap_exists(
-    first_spans: Iterable[tuple[int, int]], second_spans: Iterable[tuple[int, int]]
-) -> bool:
-    for mapping in combinations(product(first_spans, second_spans), r=2):
-        # Don't need to worry about iterator exhaustion
-        # since itertools.combinations returns tuples
-        preimage = get_preimage(mapping)
-        image = get_image(mapping)
-        if admits_bijection(preimage, image) and all(
-            overlap_match(*pair) for pair in mapping
-        ):
-            return True
-    return False
 
 
 @dataclass(eq=True, frozen=True)
@@ -79,7 +41,9 @@ class Entity:
             return self.overlap_match(other)
         return self.span == other.span
 
-    def overlap_match(self, other: Entity) -> bool:
+    def overlap_match(self, other: Any) -> bool:
+        if not isinstance(other, Entity):
+            return False
         return self.span[0] < other.span[1] and self.span[1] > other.span[0]
 
 
@@ -134,6 +98,42 @@ class Relation:
             order_ignored_match = overlap_exists(this_spans, other_spans)
             return other.label == self.label and order_ignored_match
         return False
+
+
+def overlap_match(arg1_span: tuple[int, int], arg2_span: tuple[int, int]) -> bool:
+    return arg1_span[0] < arg2_span[1] and arg1_span[1] > arg2_span[0]
+
+
+def admits_bijection[T](preimage: Iterable[T], image: Iterable[T]) -> bool:
+    # reduced function is a permutation but allows for repeats
+    return sorted(Counter(preimage).values()) == sorted(Counter(image).values())
+
+
+def get_nth[T](mapping: Iterable[tuple[T, ...]], n: int) -> Iterable[T]:
+    return map(itemgetter(n), mapping)
+
+
+def get_preimage[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
+    return get_nth(mapping, n=0)
+
+
+def get_image[T](mapping: Iterable[tuple[T, T]]) -> Iterable[T]:
+    return get_nth(mapping, n=1)
+
+
+def overlap_exists(
+    first_spans: Iterable[tuple[int, int]], second_spans: Iterable[tuple[int, int]]
+) -> bool:
+    for mapping in combinations(product(first_spans, second_spans), r=2):
+        # Don't need to worry about iterator exhaustion
+        # since itertools.combinations returns tuples
+        preimage = get_preimage(mapping)
+        image = get_image(mapping)
+        if admits_bijection(preimage, image) and all(
+            overlap_match(*pair) for pair in mapping
+        ):
+            return True
+    return False
 
 
 @dataclass(eq=True, frozen=True)
