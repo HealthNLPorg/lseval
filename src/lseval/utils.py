@@ -177,7 +177,7 @@ def get_indices(entity: dict) -> tuple[int, int]:
 
 
 def parse_event_type(entity: dict) -> str | None:
-    if entity.get("from_name") != "Event":
+    if entity.get("from_name") != "EVENT":
         entity_space = entity["from_name"]
         raise ValueError(f"Wrong entity type for parse_event_type: {entity_space}")
     entity_value = entity.get("value")
